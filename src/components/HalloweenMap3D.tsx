@@ -11,6 +11,11 @@ export interface HalloweenMapHandle {
   zoomIn: () => void;
   zoomOut: () => void;
   resetView: () => void;
+  rotateClockwise: (angle?: number) => void;
+  rotateCounterClockwise: (angle?: number) => void;
+  setRotationAngle: (radians: number) => void;
+  getRotationDegrees: () => number;
+  focusOnCoords: (mapX: number, mapY: number) => void;
   recenterOnPlayer: () => void;
   updateHouse: (houseId: string, houseNumber: string, hasCandy: boolean) => void;
 }
@@ -25,11 +30,22 @@ interface HalloweenMap3DProps {
   onMapTapMove?: (mapX: number, mapY: number) => void;
   isFollowPlayer?: boolean;
   onManualPan?: () => void;
+  onRotationChange?: (degrees: number) => void;
 }
 
 // Map dimensions matching authentic image aspect ratio: 1094 / 738 = 1.4823848
 const WORLD_WIDTH = 48;
 const WORLD_HEIGHT = 48 / 1.4823848; // ~32.38
+
+// Initial camera viewpoint matching the user's screenshot focused at INICIO & Cuadra 1
+export const DEFAULT_CAMERA_CONFIG = {
+  targetX: -16.0,
+  targetY: 0,
+  targetZ: 9.2,
+  radius: 22,
+  theta: Math.PI / 4.2,
+  phi: Math.PI / 3.4,
+};
 
 // Module-scope temporary variables to prevent GC in render loop
 const _vec3A = new THREE.Vector3();
@@ -46,6 +62,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
   onMapTapMove,
   isFollowPlayer = false,
   onManualPan,
+  onRotationChange,
 }, ref) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -63,18 +80,22 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     ambientLight: THREE.AmbientLight;
   } | null>(null);
 
-  // Smooth camera controls state
+  // Smooth camera controls state initialized to exact user screenshot angle & target
   const cameraControlRef = useRef({
-    target: new THREE.Vector3(0, 0, 0),
-    spherical: { radius: 36, theta: Math.PI / 4, phi: Math.PI / 3.4 },
+    target: new THREE.Vector3(DEFAULT_CAMERA_CONFIG.targetX, DEFAULT_CAMERA_CONFIG.targetY, DEFAULT_CAMERA_CONFIG.targetZ),
+    spherical: {
+      radius: DEFAULT_CAMERA_CONFIG.radius,
+      theta: DEFAULT_CAMERA_CONFIG.theta,
+      phi: DEFAULT_CAMERA_CONFIG.phi,
+    },
     isDragging: false,
     dragButton: 0,
     prevPointer: { x: 0, y: 0 },
     dragDistance: 0,
-    desiredTarget: new THREE.Vector3(0, 0, 0),
-    desiredRadius: 36,
-    desiredTheta: Math.PI / 4,
-    desiredPhi: Math.PI / 3.4,
+    desiredTarget: new THREE.Vector3(DEFAULT_CAMERA_CONFIG.targetX, DEFAULT_CAMERA_CONFIG.targetY, DEFAULT_CAMERA_CONFIG.targetZ),
+    desiredRadius: DEFAULT_CAMERA_CONFIG.radius,
+    desiredTheta: DEFAULT_CAMERA_CONFIG.theta,
+    desiredPhi: DEFAULT_CAMERA_CONFIG.phi,
   });
 
   const playerPosRef = useRef(playerPos);
@@ -512,6 +533,13 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       camera.position.z = controls.target.z + controls.spherical.radius * sinPhi * cosTheta;
       camera.lookAt(controls.target);
 
+      // Report rotation degrees for compass / UI angle indicator
+      if (onRotationChange) {
+        let deg = Math.round((controls.spherical.theta * 180) / Math.PI) % 360;
+        if (deg < 0) deg += 360;
+        onRotationChange(deg);
+      }
+
       // Smoothly update player avatar position in 3D world
       if (playerGroupRef.current) {
         const curMap = playerPosRef.current;
@@ -878,16 +906,46 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     },
     resetView: () => {
       const controls = cameraControlRef.current;
-      controls.desiredTheta = Math.PI / 4;
-      controls.desiredPhi = Math.PI / 3.4;
-      controls.desiredRadius = 38;
-      controls.desiredTarget.set(0, 0, 0);
+      controls.desiredTheta = DEFAULT_CAMERA_CONFIG.theta;
+      controls.desiredPhi = DEFAULT_CAMERA_CONFIG.phi;
+      controls.desiredRadius = DEFAULT_CAMERA_CONFIG.radius;
+      controls.desiredTarget.set(
+        DEFAULT_CAMERA_CONFIG.targetX,
+        DEFAULT_CAMERA_CONFIG.targetY,
+        DEFAULT_CAMERA_CONFIG.targetZ
+      );
+      isFollowPlayerRef.current = false;
+    },
+    rotateClockwise: (angle: number = Math.PI / 4) => {
+      const controls = cameraControlRef.current;
+      controls.desiredTheta += angle;
+    },
+    rotateCounterClockwise: (angle: number = Math.PI / 4) => {
+      const controls = cameraControlRef.current;
+      controls.desiredTheta -= angle;
+    },
+    setRotationAngle: (radians: number) => {
+      const controls = cameraControlRef.current;
+      controls.desiredTheta = radians;
+    },
+    getRotationDegrees: () => {
+      const theta = cameraControlRef.current.spherical.theta;
+      let deg = Math.round((theta * 180) / Math.PI) % 360;
+      if (deg < 0) deg += 360;
+      return deg;
+    },
+    focusOnCoords: (mapX: number, mapY: number) => {
+      const controls = cameraControlRef.current;
+      const { x, z } = mapCoordsToWorld(mapX, mapY);
+      controls.desiredTarget.set(x, 0, z);
+      controls.desiredRadius = 22;
       isFollowPlayerRef.current = false;
     },
     recenterOnPlayer: () => {
       const controls = cameraControlRef.current;
       const { x, z } = mapCoordsToWorld(playerPosRef.current.mapX, playerPosRef.current.mapY);
       controls.desiredTarget.set(x, 0, z);
+      controls.desiredRadius = 22;
       isFollowPlayerRef.current = true;
     },
     updateHouse: (houseId: string, houseNumber: string, hasCandy: boolean) => {

@@ -486,7 +486,7 @@ export function createAestheticHouse(
   candyGlowGroup.add(auraCylinder);
 
   // (8) Floating 3D House Number Badge Label (visible when house gives candy)
-  const badgeY = foundationH + bodyH + roofH + 0.92;
+  const badgeY = foundationH + bodyH + roofH + 1.35;
   const badge = createHouseBadgeSprite(houseNumber || '?');
   badge.position.set(0, badgeY, 0);
   badge.visible = hasCandy;
@@ -514,18 +514,19 @@ export function createAestheticHouse(
 }
 
 /**
- * Creates a crisp floating 3D badge showing the house number above the roof
+ * Creates a crisp floating 3D badge showing the house number above the roof.
+ * High-resolution canvas & enlarged sprite scale ensure high visibility from far distances.
  */
 export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 96;
+  canvas.width = 512;
+  canvas.height = 180;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.clearRect(0, 0, 256, 96);
+    ctx.clearRect(0, 0, 512, 180);
 
     // Glowing badge pill background
-    const x = 6, y = 6, w = 244, h = 84, r = 22;
+    const x = 12, y = 12, w = 488, h = 156, r = 44;
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.lineTo(x + w - r, y);
@@ -538,25 +539,49 @@ export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
 
-    // Dark slate background with bright orange gradient
+    // Vibrant Halloween gradient (bright amber-400 to bold orange-600)
     const grad = ctx.createLinearGradient(0, y, 0, y + h);
-    grad.addColorStop(0, '#f59e0b'); // amber-500
+    grad.addColorStop(0, '#fbbf24'); // amber-400
+    grad.addColorStop(0.5, '#f59e0b'); // amber-500
     grad.addColorStop(1, '#ea580c'); // orange-600
     ctx.fillStyle = grad;
+
+    // Dark drop shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 6;
     ctx.fill();
 
-    // Bright border
+    // Reset shadow for crisp border
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Bright high-contrast white border
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 10;
     ctx.stroke();
 
-    // Text: House Number with candy icon
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 34px system-ui, -apple-system, sans-serif';
+    // Inner subtle darker rim for 3D depth
+    ctx.strokeStyle = 'rgba(120, 53, 15, 0.5)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Text: Large bold House Number with candy icon
+    const label = numberStr && numberStr !== '?' ? `#${numberStr} 🍬` : '🍬 DULCES';
+    ctx.font = '900 70px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const label = numberStr ? `#${numberStr} 🍬` : '🍬 DULCES';
-    ctx.fillText(label, 128, 48);
+
+    // Dark black outline around text for ultra high contrast
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 14;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, 256, 92);
+
+    // Bright white fill
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, 256, 92);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -570,7 +595,8 @@ export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
   });
   const sprite = new THREE.Sprite(mat);
   sprite.name = 'houseBadgeSprite';
-  sprite.scale.set(1.9, 0.72, 1);
+  // Generous scale to be easily legible across the whole 3D neighborhood
+  sprite.scale.set(3.8, 1.35, 1);
   return sprite;
 }
 
@@ -620,7 +646,7 @@ export function updateHouseVisualState(
     }
     const bodyH = houseGroup.userData.h || 1.1;
     const roofH = bodyH * 0.46;
-    const badgeY = 0.08 + bodyH + roofH + 0.92;
+    const badgeY = 0.08 + bodyH + roofH + 1.35;
     const newBadge = createHouseBadgeSprite(houseNumber || '?');
     newBadge.position.set(0, badgeY, 0);
     newBadge.visible = true;

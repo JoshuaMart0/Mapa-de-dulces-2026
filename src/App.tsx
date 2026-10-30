@@ -4,13 +4,15 @@ import { HouseModal } from './components/HouseModal';
 import { CandyBagDrawer } from './components/CandyBagDrawer';
 import { HeaderBadge } from './components/HeaderBadge';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { CameraControlsDock } from './components/CameraControlsDock';
+import { CandyHousesListModal } from './components/CandyHousesListModal';
 import { useGeolocation, NEIGHBORHOOD_WIDTH_METERS, NEIGHBORHOOD_HEIGHT_METERS } from './hooks/useGeolocation';
 import { CANDY_LOCATIONS } from './data/candyLocations';
 import { loadHousesData, saveHousesData } from './data/housesData';
 import { HouseData, CameraPreset, TimeOfDay } from './types';
 import { sounds } from './audio/soundEffects';
 import { getClosestStreetName } from './data/streetNetwork';
-import { Navigation, Play, ShieldAlert, LogOut, Lock, Edit3 } from 'lucide-react';
+import { Navigation, Play, ShieldAlert, LogOut, Lock, Edit3, Candy } from 'lucide-react';
 
 import { subscribeToHouses, saveHouseToFirestore } from './data/firestoreHousesService';
 
@@ -42,6 +44,8 @@ export default function App() {
   // Navigation State
   const [isFollowingPlayer, setIsFollowingPlayer] = useState(false);
   const [isBagOpen, setIsBagOpen] = useState(false);
+  const [isCandyListOpen, setIsCandyListOpen] = useState(false);
+  const [cameraAngleDeg, setCameraAngleDeg] = useState(43);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('isometric');
   const [timeOfDay] = useState<TimeOfDay>('night');
 
@@ -200,6 +204,17 @@ export default function App() {
         cameraPreset={cameraPreset}
         isFollowPlayer={isFollowingPlayer}
         onManualPan={() => setIsFollowingPlayer(false)}
+        onRotationChange={(deg) => setCameraAngleDeg(deg)}
+      />
+
+      {/* 360° Mobile Rotation & Zoom Controls Dock */}
+      <CameraControlsDock
+        onRotateLeft={() => mapRef.current?.rotateCounterClockwise(Math.PI / 4)}
+        onRotateRight={() => mapRef.current?.rotateClockwise(Math.PI / 4)}
+        onResetAngle={handleResetView}
+        onZoomIn={() => mapRef.current?.zoomIn()}
+        onZoomOut={() => mapRef.current?.zoomOut()}
+        rotationDegrees={cameraAngleDeg}
       />
 
       {/* Top Header Badge (Clean & Minimalist for participants) */}
@@ -294,6 +309,27 @@ export default function App() {
       )}
 
       {/* ========================================================= */}
+      {/* CORNER BUTTON: LISTA DE CASAS REGISTRADAS PARA DULCES    */}
+      {/* ========================================================= */}
+      <div className="fixed bottom-3.5 left-3.5 z-30 pointer-events-auto">
+        <button
+          onClick={() => {
+            sounds.playSelect();
+            setIsCandyListOpen(true);
+          }}
+          className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm tracking-wide shadow-2xl shadow-orange-500/40 border-2 border-amber-300 ring-2 ring-amber-500/30 flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+          title="Ver lista de casas registradas para pedir dulce"
+          aria-label="Ver casas con dulces"
+        >
+          <Candy className="w-4 h-4 text-slate-950 shrink-0" />
+          <span className="whitespace-nowrap font-black">Casas con Dulces</span>
+          <span className="px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 font-extrabold text-[11px] leading-tight">
+            {candyHousesCount}
+          </span>
+        </button>
+      </div>
+
+      {/* ========================================================= */}
       {/* SUBTLE ADMIN CORNER BUTTON (ACCESO PARA EL ORGANIZADOR)   */}
       {/* ========================================================= */}
       {!isAdmin && (
@@ -307,6 +343,21 @@ export default function App() {
           <span className="font-medium">Admin</span>
         </button>
       )}
+
+      {/* Candy Houses List Modal */}
+      <CandyHousesListModal
+        isOpen={isCandyListOpen}
+        onClose={() => setIsCandyListOpen(false)}
+        housesData={housesData}
+        collectedIds={collectedCandyIds}
+        onToggleCollected={handleToggleCollectedCandy}
+        onFocusHouse={(house) => {
+          mapRef.current?.focusOnCoords(house.mapX, house.mapY);
+          setSelectedHouse(house);
+          setIsFollowingPlayer(false);
+        }}
+        getDistanceMeters={getCoordsDistanceMeters}
+      />
 
       {/* Admin Login Password Modal ("halloween2026") */}
       <AdminLoginModal
