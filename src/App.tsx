@@ -1,46 +1,49 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { HalloweenMap3D, HalloweenMapHandle } from './components/HalloweenMap3D';
-import { GPSControlDock } from './components/GPSControlDock';
 import { HouseModal } from './components/HouseModal';
 import { CandyBagDrawer } from './components/CandyBagDrawer';
 import { HeaderBadge } from './components/HeaderBadge';
-import { VirtualJoystick } from './components/VirtualJoystick';
+import { AdminLoginModal } from './components/AdminLoginModal';
 import { useGeolocation, NEIGHBORHOOD_WIDTH_METERS, NEIGHBORHOOD_HEIGHT_METERS } from './hooks/useGeolocation';
 import { CANDY_LOCATIONS } from './data/candyLocations';
 import { loadHousesData, saveHousesData } from './data/housesData';
-import { HouseData, CandyLocation, CameraPreset, TimeOfDay } from './types';
+import { HouseData, CameraPreset, TimeOfDay } from './types';
 import { sounds } from './audio/soundEffects';
 import { getClosestStreetName } from './data/streetNetwork';
-import { Navigation, Play } from 'lucide-react';
+import { Navigation, Play, ShieldAlert, LogOut, Lock, Edit3 } from 'lucide-react';
+
+import { subscribeToHouses, saveHouseToFirestore } from './data/firestoreHousesService';
 
 export default function App() {
   const mapRef = useRef<HalloweenMapHandle>(null);
 
   const {
     playerPos,
-    isGpsAvailable,
-    gpsActive,
     isJourneyStarted,
     gpsError,
     startJourney,
     stopJourney,
-    toggleGps,
-    calibrateToCurrentLocation,
-    teleportTo,
-    walkStep,
-    resetToStart,
   } = useGeolocation();
 
   // Houses State & Persistence
   const [housesData, setHousesData] = useState<Record<string, HouseData>>(() => loadHousesData());
   const [selectedHouse, setSelectedHouse] = useState<HouseData | null>(null);
 
+  // Admin Authentication State ("halloween2026")
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('halloween_admin_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+
   // Navigation State
   const [isFollowingPlayer, setIsFollowingPlayer] = useState(false);
   const [isBagOpen, setIsBagOpen] = useState(false);
-  const [isWalkModeActive, setIsWalkModeActive] = useState(false);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('isometric');
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>('night');
+  const [timeOfDay] = useState<TimeOfDay>('night');
 
   // Load collected candies from localStorage
   const [collectedCandyIds, setCollectedCandyIds] = useState<Set<string>>(() => {
@@ -67,13 +70,22 @@ export default function App() {
     }
   }, [collectedCandyIds]);
 
+  // Real-time Firestore sync across all devices & users
+  useEffect(() => {
+    const unsubscribe = subscribeToHouses((liveHouses) => {
+      setHousesData(liveHouses);
+      // Synchronize 3D scene visual state and floating badges for each house
+      Object.values(liveHouses).forEach((house) => {
+        mapRef.current?.updateHouse(house.id, house.houseNumber, house.hasCandy);
+      });
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Count houses with candy
   const candyHousesCount = useMemo(() => {
     return Object.values(housesData).filter((h) => h.hasCandy).length;
-  }, [housesData]);
-
-  const totalHousesCount = useMemo(() => {
-    return Object.keys(housesData).length;
   }, [housesData]);
 
   // Distance calculation helper
@@ -91,7 +103,6 @@ export default function App() {
     let minDistance = Infinity;
     let closestName: string | null = null;
 
-    // Check candy houses
     Object.values(housesData).forEach((h) => {
       if (h.hasCandy) {
         const dist = getCoordsDistanceMeters(h.mapX, h.mapY);
@@ -102,7 +113,6 @@ export default function App() {
       }
     });
 
-    // Check special park candy spots
     CANDY_LOCATIONS.forEach((c) => {
       const dist = getCoordsDistanceMeters(c.mapX, c.mapY);
       if (dist < minDistance) {
@@ -122,15 +132,14 @@ export default function App() {
     return getClosestStreetName(playerPos.mapX, playerPos.mapY);
   }, [playerPos.mapX, playerPos.mapY]);
 
-  // Handle house saving
+  // Handle house saving by Admin (syncs to Firestore in cloud)
   const handleSaveHouse = useCallback((updated: HouseData) => {
-    setHousesData((prev) => {
-      const next = { ...prev, [updated.id]: updated };
-      saveHousesData(next);
-      return next;
-    });
-    // Immediately update 3D scene visual state
+    // 1. Instant local visual update & 3D badge update
+    setHousesData((prev) => ({ ...prev, [updated.id]: updated }));
     mapRef.current?.updateHouse(updated.id, updated.houseNumber, updated.hasCandy);
+
+    // 2. Persist to Firestore cloud database so every user's phone updates in real time
+    saveHouseToFirestore(updated);
   }, []);
 
   // Handle candy collection toggle
@@ -153,19 +162,29 @@ export default function App() {
     setIsFollowingPlayer(true);
   }, []);
 
-  // Zoom controls
-  const handleZoomIn = () => {
-    mapRef.current?.zoomIn();
-  };
-
-  const handleZoomOut = () => {
-    mapRef.current?.zoomOut();
-  };
-
   const handleResetView = () => {
     mapRef.current?.resetView();
     setCameraPreset('isometric');
     setIsFollowingPlayer(false);
+  };
+
+  const handleAdminLoginSuccess = () => {
+    setIsAdmin(true);
+    try {
+      sessionStorage.setItem('halloween_admin_auth', 'true');
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleAdminLogout = () => {
+    sounds.playSelect();
+    setIsAdmin(false);
+    try {
+      sessionStorage.removeItem('halloween_admin_auth');
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -183,7 +202,7 @@ export default function App() {
         onManualPan={() => setIsFollowingPlayer(false)}
       />
 
-      {/* Top Header Badge */}
+      {/* Top Header Badge (Clean & Minimalist for participants) */}
       <HeaderBadge
         collectedCount={collectedCandyIds.size}
         nearestCandyDistance={nearestCandyInfo.distance}
@@ -192,7 +211,9 @@ export default function App() {
         onResetNorth={handleResetView}
       />
 
-      {/* Floating Primary "COMENZAR" Button */}
+      {/* ========================================================= */}
+      {/* PRIMARY GPS BUTTON (ONLY BUTTON PARTICIPANTS NEED)       */}
+      {/* ========================================================= */}
       {!isJourneyStarted ? (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-[90vw]">
           <button
@@ -201,23 +222,23 @@ export default function App() {
               startJourney();
               setIsFollowingPlayer(true);
             }}
-            className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm tracking-wider shadow-2xl shadow-orange-500/40 border-2 border-amber-300 ring-2 ring-amber-500/30 flex items-center gap-2.5 active:scale-95 transition-all cursor-pointer"
+            className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-sm tracking-wider shadow-2xl shadow-orange-500/40 border-2 border-amber-300 ring-2 ring-amber-500/30 flex items-center gap-2.5 active:scale-95 transition-all cursor-pointer"
           >
-            <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-slate-950 shrink-0" />
+            <Play className="w-5 h-5 fill-slate-950 shrink-0" />
             <span className="whitespace-nowrap">COMENZAR RECORRIDO GPS</span>
           </button>
         </div>
       ) : (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-[90vw]">
-          <div className="px-3.5 py-1.5 rounded-full bg-slate-900/95 border border-emerald-500/50 shadow-xl flex items-center gap-2 text-xs text-emerald-300 font-semibold">
+          <div className="px-4 py-2 rounded-full bg-slate-900/95 border border-emerald-500/60 shadow-xl flex items-center gap-2.5 text-xs text-emerald-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <span>GPS en Vivo</span>
+            <span className="whitespace-nowrap">GPS en Vivo: Siguiéndote en tiempo real</span>
             <button
               onClick={() => {
                 sounds.playSelect();
                 stopJourney();
               }}
-              className="ml-2 text-[10px] text-amber-300 hover:text-white px-2 py-0.5 rounded bg-slate-800 border border-slate-700 cursor-pointer"
+              className="ml-2 text-[11px] text-amber-300 hover:text-white px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-700 cursor-pointer"
             >
               Detener
             </button>
@@ -225,7 +246,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Floating Recenter on Player Button (Ergonomic for mobile thumb access) */}
+      {/* GPS Error notification if permissions blocked */}
+      {gpsError && (
+        <div className="fixed top-36 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-[90vw] px-4 py-2 rounded-xl bg-rose-950/90 border border-rose-500 text-rose-200 text-xs shadow-xl text-center">
+          {gpsError}
+        </div>
+      )}
+
+      {/* Recenter on Player Floating Button */}
       <button
         onClick={handleRecenterOnPlayer}
         className={`fixed top-20 right-3.5 z-30 p-3 rounded-2xl shadow-xl border transition-all active:scale-90 flex items-center justify-center cursor-pointer ${
@@ -239,68 +267,55 @@ export default function App() {
         <Navigation className="w-5 h-5" />
       </button>
 
-      {/* Virtual Joystick for walking simulation */}
-      <VirtualJoystick
-        isOpen={isWalkModeActive}
-        onWalk={(dx, dy) => walkStep(dx, dy)}
+      {/* ========================================================= */}
+      {/* ADMIN STATUS BANNER (ONLY SHOWN WHEN LOGGED IN AS ADMIN) */}
+      {/* ========================================================= */}
+      {isAdmin && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[94vw] w-auto">
+          <div className="px-4 py-2.5 rounded-2xl bg-amber-950/95 border border-amber-500/60 shadow-2xl flex items-center gap-3 text-xs text-amber-200">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
+                <Edit3 className="w-3.5 h-3.5" />
+              </span>
+              <div>
+                <span className="font-bold text-white block leading-tight">Modo Administrador Activo</span>
+                <span className="text-[11px] text-amber-300/90 leading-tight">Toca cualquier casa para editar su número o dulces</span>
+              </div>
+            </div>
+            <button
+              onClick={handleAdminLogout}
+              className="ml-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-amber-500/40 text-amber-300 hover:text-white hover:bg-slate-800 flex items-center gap-1.5 font-semibold text-xs transition active:scale-95"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Salir</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* SUBTLE ADMIN CORNER BUTTON (ACCESO PARA EL ORGANIZADOR)   */}
+      {/* ========================================================= */}
+      {!isAdmin && (
+        <button
+          onClick={() => setIsAdminLoginOpen(true)}
+          className="fixed bottom-3 right-3 z-30 px-2.5 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-900/95 border border-slate-800 hover:border-amber-500/40 text-slate-500 hover:text-amber-400 transition-all text-[11px] flex items-center gap-1.5 pointer-events-auto cursor-pointer shadow-md"
+          title="Acceso de Administrador"
+          aria-label="Acceso de Administrador"
+        >
+          <Lock className="w-3 h-3" />
+          <span className="font-medium">Admin</span>
+        </button>
+      )}
+
+      {/* Admin Login Password Modal ("halloween2026") */}
+      <AdminLoginModal
+        isOpen={isAdminLoginOpen}
+        onClose={() => setIsAdminLoginOpen(false)}
+        onLoginSuccess={handleAdminLoginSuccess}
       />
 
-      {/* Ergonomic Collapsible Bottom Dock */}
-      <GPSControlDock
-        playerPos={playerPos}
-        isGpsAvailable={isGpsAvailable}
-        gpsActive={gpsActive}
-        isJourneyStarted={isJourneyStarted}
-        gpsError={gpsError}
-        onStartJourney={() => {
-          sounds.playCollectCandy();
-          startJourney();
-          setIsFollowingPlayer(true);
-        }}
-        onStopJourney={() => {
-          sounds.playSelect();
-          stopJourney();
-        }}
-        onToggleGps={() => {
-          sounds.playSelect();
-          toggleGps();
-        }}
-        onCalibrateGps={() => {
-          sounds.playSelect();
-          calibrateToCurrentLocation();
-        }}
-        onResetToStart={() => {
-          sounds.playSelect();
-          resetToStart();
-        }}
-        onRecenterOnPlayer={handleRecenterOnPlayer}
-        isFollowingPlayer={isFollowingPlayer}
-        cameraPreset={cameraPreset}
-        onSetCameraPreset={(preset) => {
-          sounds.playSelect();
-          setCameraPreset(preset);
-        }}
-        timeOfDay={timeOfDay}
-        onSetTimeOfDay={(t) => {
-          sounds.playSelect();
-          setTimeOfDay(t);
-        }}
-        collectedCount={collectedCandyIds.size}
-        totalCandiesCount={CANDY_LOCATIONS.length + candyHousesCount}
-        candyHousesCount={candyHousesCount}
-        totalHousesCount={totalHousesCount}
-        onOpenCandyBag={() => {
-          sounds.playSelect();
-          setIsBagOpen(true);
-        }}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onResetView={handleResetView}
-        isWalkModeActive={isWalkModeActive}
-        onToggleWalkMode={() => setIsWalkModeActive(!isWalkModeActive)}
-      />
-
-      {/* House Number Inspection & Editing Modal */}
+      {/* House Modal (View Mode for attendees, Edit Mode for Admin) */}
       {selectedHouse && (
         <HouseModal
           house={selectedHouse}
@@ -309,6 +324,8 @@ export default function App() {
           isCandyCollected={collectedCandyIds.has(selectedHouse.id)}
           onToggleCollected={handleToggleCollectedCandy}
           distanceMeters={getCoordsDistanceMeters(selectedHouse.mapX, selectedHouse.mapY)}
+          isAdmin={isAdmin}
+          onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
         />
       )}
 
@@ -320,7 +337,6 @@ export default function App() {
         collectedIds={collectedCandyIds}
         onSelectCandy={(candy) => {
           setIsBagOpen(false);
-          // If candy corresponds to a house, select that house
           const foundHouse = Object.values(housesData).find(
             (h) => h.houseNumber === candy.houseNumber?.replace('#', '') || (Math.abs(h.mapX - candy.mapX) < 0.03 && Math.abs(h.mapY - candy.mapY) < 0.03)
           );

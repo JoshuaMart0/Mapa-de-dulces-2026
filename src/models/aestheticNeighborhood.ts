@@ -485,7 +485,13 @@ export function createAestheticHouse(
   auraCylinder.position.set(0, (h * 1.6) / 2, 0);
   candyGlowGroup.add(auraCylinder);
 
-  group.add(candyGlowGroup);
+  // (8) Floating 3D House Number Badge Label (visible when house gives candy)
+  const badgeY = foundationH + bodyH + roofH + 0.92;
+  const badge = createHouseBadgeSprite(houseNumber || '?');
+  badge.position.set(0, badgeY, 0);
+  badge.visible = hasCandy;
+  group.add(badge);
+  group.userData.houseBadgeSprite = badge;
 
   // Direct fast-access references stored on userData for O(1) animation
   group.userData.candyGlowGroup = candyGlowGroup;
@@ -508,7 +514,68 @@ export function createAestheticHouse(
 }
 
 /**
- * Updates the visual state (candy glow) of an existing 3D house without scene graph traversal.
+ * Creates a crisp floating 3D badge showing the house number above the roof
+ */
+export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, 256, 96);
+
+    // Glowing badge pill background
+    const x = 6, y = 6, w = 244, h = 84, r = 22;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+
+    // Dark slate background with bright orange gradient
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, '#f59e0b'); // amber-500
+    grad.addColorStop(1, '#ea580c'); // orange-600
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Bright border
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Text: House Number with candy icon
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 34px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = numberStr ? `#${numberStr} 🍬` : '🍬 DULCES';
+    ctx.fillText(label, 128, 48);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.name = 'houseBadgeSprite';
+  sprite.scale.set(1.9, 0.72, 1);
+  return sprite;
+}
+
+/**
+ * Updates the visual state (candy glow and floating house number badge) of an existing 3D house.
  */
 export function updateHouseVisualState(
   houseGroup: THREE.Group,
@@ -536,6 +603,31 @@ export function updateHouseVisualState(
   const cylinder = houseGroup.userData.candyAuraCylinder as THREE.Mesh | undefined;
   if (cylinder && cylinder.material instanceof THREE.MeshBasicMaterial) {
     cylinder.material.opacity = hasCandy ? 0.22 : 0;
+  }
+
+  // Update floating house number badge above roof
+  let badge = houseGroup.userData.houseBadgeSprite as THREE.Sprite | undefined;
+  if (!badge) {
+    badge = houseGroup.getObjectByName('houseBadgeSprite') as THREE.Sprite | undefined;
+    if (badge) houseGroup.userData.houseBadgeSprite = badge;
+  }
+
+  if (hasCandy) {
+    if (badge) {
+      houseGroup.remove(badge);
+      if (badge.material.map) badge.material.map.dispose();
+      badge.material.dispose();
+    }
+    const bodyH = houseGroup.userData.h || 1.1;
+    const roofH = bodyH * 0.46;
+    const badgeY = 0.08 + bodyH + roofH + 0.92;
+    const newBadge = createHouseBadgeSprite(houseNumber || '?');
+    newBadge.position.set(0, badgeY, 0);
+    newBadge.visible = true;
+    houseGroup.add(newBadge);
+    houseGroup.userData.houseBadgeSprite = newBadge;
+  } else if (badge) {
+    badge.visible = false;
   }
 
   houseGroup.traverse((child) => {

@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "House": {
+      "title": "House",
+      "description": "A residential townhouse in the Halloween neighborhood",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique house ID"
+        },
+        "blockId": {
+          "type": "string",
+          "description": "Block identifier"
+        },
+        "streetName": {
+          "type": "string",
+          "description": "Name of the street"
+        },
+        "houseNumber": {
+          "type": "string",
+          "description": "Custom house number visible in 3D badge"
+        },
+        "hasCandy": {
+          "type": "boolean",
+          "description": "Flag indicating if the house distributes candies"
+        },
+        "candyNotes": {
+          "type": "string",
+          "description": "Optional notes on treats or greeting"
+        },
+        "mapX": {
+          "type": "number",
+          "description": "Normalized map X coordinate (0..1)"
+        },
+        "mapY": {
+          "type": "number",
+          "description": "Normalized map Y coordinate (0..1)"
+        },
+        "rotationY": {
+          "type": "number",
+          "description": "Rotation Y angle in radians"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last modification"
+        }
+      },
+      "required": ["id", "houseNumber", "hasCandy", "mapX", "mapY"]
+    }
+  },
+  "firestore": {
+    "/houses/{houseId}": {
+      "schema": "House",
+      "description": "Collection of all neighborhood houses with their candy distribution status"
+    }
+  }
+}
