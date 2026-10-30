@@ -45,7 +45,7 @@ export default function App() {
   const [isFollowingPlayer, setIsFollowingPlayer] = useState(false);
   const [isBagOpen, setIsBagOpen] = useState(false);
   const [isCandyListOpen, setIsCandyListOpen] = useState(false);
-  const [cameraAngleDeg, setCameraAngleDeg] = useState(43);
+  const [cameraResetSignal, setCameraResetSignal] = useState(0);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('isometric');
   const [timeOfDay] = useState<TimeOfDay>('night');
 
@@ -170,6 +170,7 @@ export default function App() {
     mapRef.current?.resetView();
     setCameraPreset('isometric');
     setIsFollowingPlayer(false);
+    setCameraResetSignal((prev) => prev + 1);
   };
 
   const handleAdminLoginSuccess = () => {
@@ -204,7 +205,6 @@ export default function App() {
         cameraPreset={cameraPreset}
         isFollowPlayer={isFollowingPlayer}
         onManualPan={() => setIsFollowingPlayer(false)}
-        onRotationChange={(deg) => setCameraAngleDeg(deg)}
       />
 
       {/* 360° Mobile Rotation & Zoom Controls Dock */}
@@ -214,7 +214,7 @@ export default function App() {
         onResetAngle={handleResetView}
         onZoomIn={() => mapRef.current?.zoomIn()}
         onZoomOut={() => mapRef.current?.zoomOut()}
-        rotationDegrees={cameraAngleDeg}
+        resetSignal={cameraResetSignal}
       />
 
       {/* Top Header Badge (Clean & Minimalist for participants) */}

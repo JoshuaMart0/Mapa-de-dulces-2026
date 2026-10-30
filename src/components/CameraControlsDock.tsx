@@ -8,7 +8,7 @@ interface CameraControlsDockProps {
   onResetAngle: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  rotationDegrees?: number;
+  resetSignal?: number;
 }
 
 export const CameraControlsDock: React.FC<CameraControlsDockProps> = ({
@@ -17,8 +17,35 @@ export const CameraControlsDock: React.FC<CameraControlsDockProps> = ({
   onResetAngle,
   onZoomIn,
   onZoomOut,
-  rotationDegrees = 43,
+  resetSignal = 0,
 }) => {
+  const [rotationDegrees, setRotationDegrees] = React.useState(43);
+
+  // Sync angle back to default 43° when reset is signaled externally
+  React.useEffect(() => {
+    if (resetSignal > 0) {
+      setRotationDegrees(43);
+    }
+  }, [resetSignal]);
+
+  const handleRotateLeft = () => {
+    sounds.playSelect();
+    setRotationDegrees((prev) => (prev - 45 + 360) % 360);
+    onRotateLeft();
+  };
+
+  const handleRotateRight = () => {
+    sounds.playSelect();
+    setRotationDegrees((prev) => (prev + 45) % 360);
+    onRotateRight();
+  };
+
+  const handleReset = () => {
+    sounds.playSelect();
+    setRotationDegrees(43);
+    onResetAngle();
+  };
+
   return (
     <aside
       aria-label="Controles de cámara y rotación"
@@ -35,10 +62,7 @@ export const CameraControlsDock: React.FC<CameraControlsDockProps> = ({
 
         {/* Rotate Left 45° */}
         <button
-          onClick={() => {
-            sounds.playSelect();
-            onRotateLeft();
-          }}
+          onClick={handleRotateLeft}
           className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-amber-400 flex flex-col items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95"
           title="Rotar vista 45° a la izquierda (Antihorario)"
           aria-label="Rotar vista 45° a la izquierda"
@@ -49,10 +73,7 @@ export const CameraControlsDock: React.FC<CameraControlsDockProps> = ({
 
         {/* Compass Dial / Reset to Default Angle */}
         <button
-          onClick={() => {
-            sounds.playSelect();
-            onResetAngle();
-          }}
+          onClick={handleReset}
           className="my-1 w-10 h-10 rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 hover:border-amber-400 text-amber-400 flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 shadow-inner"
           title="Toca para restablecer ángulo inicial"
           aria-label="Restablecer ángulo inicial"
@@ -68,10 +89,7 @@ export const CameraControlsDock: React.FC<CameraControlsDockProps> = ({
 
         {/* Rotate Right 45° */}
         <button
-          onClick={() => {
-            sounds.playSelect();
-            onRotateRight();
-          }}
+          onClick={handleRotateRight}
           className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-amber-400 flex flex-col items-center justify-center transition-all cursor-pointer shadow-sm active:scale-95"
           title="Rotar vista 45° a la derecha (Horario)"
           aria-label="Rotar vista 45° a la derecha"

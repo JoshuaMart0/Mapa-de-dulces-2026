@@ -30,7 +30,6 @@ interface HalloweenMap3DProps {
   onMapTapMove?: (mapX: number, mapY: number) => void;
   isFollowPlayer?: boolean;
   onManualPan?: () => void;
-  onRotationChange?: (degrees: number) => void;
 }
 
 // Map dimensions matching authentic image aspect ratio: 1094 / 738 = 1.4823848
@@ -62,7 +61,6 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
   onMapTapMove,
   isFollowPlayer = false,
   onManualPan,
-  onRotationChange,
 }, ref) => {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -92,6 +90,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     dragButton: 0,
     prevPointer: { x: 0, y: 0 },
     dragDistance: 0,
+    didTriggerPan: false,
     desiredTarget: new THREE.Vector3(DEFAULT_CAMERA_CONFIG.targetX, DEFAULT_CAMERA_CONFIG.targetY, DEFAULT_CAMERA_CONFIG.targetZ),
     desiredRadius: DEFAULT_CAMERA_CONFIG.radius,
     desiredTheta: DEFAULT_CAMERA_CONFIG.theta,
@@ -533,13 +532,6 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       camera.position.z = controls.target.z + controls.spherical.radius * sinPhi * cosTheta;
       camera.lookAt(controls.target);
 
-      // Report rotation degrees for compass / UI angle indicator
-      if (onRotationChange) {
-        let deg = Math.round((controls.spherical.theta * 180) / Math.PI) % 360;
-        if (deg < 0) deg += 360;
-        onRotationChange(deg);
-      }
-
       // Smoothly update player avatar position in 3D world
       if (playerGroupRef.current) {
         const curMap = playerPosRef.current;
@@ -681,6 +673,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       controls.dragButton = e.button;
       controls.prevPointer = { x: e.clientX, y: e.clientY };
       controls.dragDistance = 0;
+      controls.didTriggerPan = false;
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -692,8 +685,9 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       controls.prevPointer = { x: e.clientX, y: e.clientY };
       controls.dragDistance += Math.hypot(dx, dy);
 
-      // User is manually moving the camera -> detach any player auto-follow
-      if (controls.dragDistance > 6) {
+      // User is manually moving the camera -> detach any player auto-follow (fire once per gesture)
+      if (controls.dragDistance > 6 && !controls.didTriggerPan) {
+        controls.didTriggerPan = true;
         isFollowPlayerRef.current = false;
         if (onManualPan) onManualPan();
       }
