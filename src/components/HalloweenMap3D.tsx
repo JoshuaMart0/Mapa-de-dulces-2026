@@ -30,6 +30,8 @@ interface HalloweenMap3DProps {
   onMapTapMove?: (mapX: number, mapY: number) => void;
   isFollowPlayer?: boolean;
   onManualPan?: () => void;
+  isAdmin?: boolean;
+  isAdminCursorActive?: boolean;
 }
 
 // Map dimensions matching authentic image aspect ratio: 1094 / 738 = 1.4823848
@@ -61,8 +63,40 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
   onMapTapMove,
   isFollowPlayer = false,
   onManualPan,
+  isAdmin = false,
+  isAdminCursorActive = false,
 }, ref) => {
   const mountRef = useRef<HTMLDivElement>(null);
+
+  // Admin Hover Cursor Tool state & refs
+  const [hoveredHouseInfo, setHoveredHouseInfo] = React.useState<{
+    id: string;
+    houseNumber: string;
+    streetName: string;
+    screenX: number;
+    screenY: number;
+  } | null>(null);
+
+  const hoverIndicatorGroupRef = useRef<THREE.Group | null>(null);
+  const hoveredHouseIdRef = useRef<string | null>(null);
+  const hoveredBaseHeightRef = useRef<number>(2.2);
+  const isAdminCursorActiveRef = useRef<boolean>(Boolean(isAdminCursorActive));
+
+  useEffect(() => {
+    isAdminCursorActiveRef.current = Boolean(isAdminCursorActive);
+    if (!isAdminCursorActive) {
+      if (hoverIndicatorGroupRef.current) {
+        hoverIndicatorGroupRef.current.visible = false;
+      }
+      setHoveredHouseInfo(null);
+      hoveredHouseIdRef.current = null;
+      if (rendererRef.current?.domElement) {
+        rendererRef.current.domElement.style.cursor = 'grab';
+      }
+    } else if (rendererRef.current?.domElement) {
+      rendererRef.current.domElement.style.cursor = 'crosshair';
+    }
+  }, [isAdminCursorActive]);
 
   // Scene references
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -522,6 +556,77 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     playerGroup.add(avatarGroup);
 
     // ==========================================
+    // 4B. ADMIN 3D HOVER SELECTION INDICATOR
+    // ==========================================
+    const hoverIndicatorGroup = new THREE.Group();
+    hoverIndicatorGroup.name = 'hoverIndicatorGroup';
+    hoverIndicatorGroup.visible = false;
+    scene.add(hoverIndicatorGroup);
+    hoverIndicatorGroupRef.current = hoverIndicatorGroup;
+
+    // A. Ground Reticle - Outer glowing bracket disc
+    const hoverGroundMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8, // vibrant cyan
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+    });
+    const hoverGroundRing = new THREE.Mesh(new THREE.RingGeometry(0.72, 0.98, 32), hoverGroundMat);
+    hoverGroundRing.rotation.x = -Math.PI / 2;
+    hoverGroundRing.position.y = 0.06;
+    hoverGroundRing.name = 'hoverGroundRing';
+    hoverIndicatorGroup.add(hoverGroundRing);
+
+    // B. Ground Inner Disc
+    const hoverDiscMat = new THREE.MeshBasicMaterial({
+      color: 0x0284c7,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const hoverGroundDisc = new THREE.Mesh(new THREE.CircleGeometry(0.68, 32), hoverDiscMat);
+    hoverGroundDisc.rotation.x = -Math.PI / 2;
+    hoverGroundDisc.position.y = 0.058;
+    hoverIndicatorGroup.add(hoverGroundDisc);
+
+    // C. Ground Architectural Bounding Corner Brackets
+    const hoverCornerGeo = new THREE.BoxGeometry(1.25, 0.03, 1.25);
+    const hoverCornerEdges = new THREE.EdgesGeometry(hoverCornerGeo);
+    const hoverCornerLines = new THREE.LineSegments(
+      hoverCornerEdges,
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9 })
+    );
+    hoverCornerLines.position.y = 0.062;
+    hoverIndicatorGroup.add(hoverCornerLines);
+
+    // D. Floating 3D Cursor Pin / Downward Arrow above the house
+    const hoverCursorPinGroup = new THREE.Group();
+    hoverCursorPinGroup.name = 'hoverCursorPinGroup';
+    hoverCursorPinGroup.position.y = 2.2;
+
+    const cursorPinMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      metalness: 0.5,
+    });
+    // Inverted cone pointing down to the house
+    const cursorPinCone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.48, 12), cursorPinMat);
+    cursorPinCone.rotation.x = Math.PI;
+    hoverCursorPinGroup.add(cursorPinCone);
+
+    // Glowing bright top bead
+    const cursorBeadMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+    const cursorBead = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), cursorBeadMat);
+    cursorBead.position.y = 0.28;
+    hoverCursorPinGroup.add(cursorBead);
+
+    hoverIndicatorGroup.add(hoverCursorPinGroup);
+
+    // ==========================================
     // 5. ANIMATION LOOP
     // ==========================================
     let animFrameId = 0;
@@ -665,6 +770,21 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         }
       });
 
+      // Animate Admin 3D Hover Indicator
+      if (hoverIndicatorGroupRef.current && hoverIndicatorGroupRef.current.visible) {
+        const hGroup = hoverIndicatorGroupRef.current;
+        const pin = hGroup.getObjectByName('hoverCursorPinGroup');
+        if (pin) {
+          pin.rotation.y = elapsed * 3;
+          pin.position.y = (hoveredBaseHeightRef.current || 2.2) + Math.sin(elapsed * 7) * 0.12;
+        }
+        const ring = hGroup.getObjectByName('hoverGroundRing') as THREE.Mesh | undefined;
+        if (ring) {
+          const s = 1.0 + Math.sin(elapsed * 5) * 0.08;
+          ring.scale.set(s, s, s);
+        }
+      }
+
       renderer.render(scene, camera);
 
       if (isSoftwareGl) {
@@ -704,11 +824,108 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       controls.prevPointer = { x: e.clientX, y: e.clientY };
       controls.dragDistance = 0;
       controls.didTriggerPan = false;
+
+      // Temporarily hide hover tooltip during active drag
+      setHoveredHouseInfo(null);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
       const controls = cameraControlRef.current;
-      if (!controls.isDragging) return;
+
+      // When NOT dragging, evaluate hover raycasting if Admin Cursor Tool is active
+      if (!controls.isDragging) {
+        if (isAdminCursorActiveRef.current && neighborhoodRef.current && cameraRef.current) {
+          const rect = dom.getBoundingClientRect();
+          _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          _raycaster.setFromCamera(_pointer, cameraRef.current);
+
+          const housesGroup = neighborhoodRef.current.housesGroup;
+
+          // Priority 1: Check visible tags
+          let targetHouseId: string | null = null;
+          let targetHouseGroup: THREE.Group | null = null;
+
+          const visibleBadges: THREE.Sprite[] = [];
+          housesGroup.traverse((child) => {
+            if (child instanceof THREE.Sprite && child.name === 'houseBadgeSprite' && child.visible) {
+              visibleBadges.push(child);
+            }
+          });
+
+          if (visibleBadges.length > 0) {
+            const badgeHits = _raycaster.intersectObjects(visibleBadges, false);
+            if (badgeHits.length > 0) {
+              const hitSprite = badgeHits[0].object as THREE.Sprite;
+              targetHouseId = hitSprite.userData?.houseId || null;
+              if (targetHouseId) {
+                targetHouseGroup = housesGroup.getObjectByName(targetHouseId) as THREE.Group | null;
+              }
+            }
+          }
+
+          // Priority 2: Check physical house geometry (roof, walls, doors)
+          if (!targetHouseId) {
+            const houseIntersects = _raycaster.intersectObjects(housesGroup.children, true);
+            for (const hit of houseIntersects) {
+              const obj = hit.object;
+              if (
+                obj.userData?.isAura ||
+                obj.name?.includes('Aura') ||
+                obj.name?.includes('Cylinder') ||
+                obj.name?.includes('HitBox') ||
+                obj.name?.includes('hover')
+              ) {
+                continue;
+              }
+
+              let cur: THREE.Object3D | null = obj;
+              while (cur && cur !== housesGroup) {
+                if (cur.userData?.isHouse && cur.userData?.houseId) {
+                  targetHouseId = cur.userData.houseId;
+                  targetHouseGroup = cur as THREE.Group;
+                  break;
+                }
+                cur = cur.parent;
+              }
+              if (targetHouseId) break;
+            }
+          }
+
+          if (targetHouseId && housesDataRef.current[targetHouseId]) {
+            const houseRecord = housesDataRef.current[targetHouseId];
+            hoveredHouseIdRef.current = targetHouseId;
+
+            if (hoverIndicatorGroupRef.current) {
+              const hGroup = targetHouseGroup || (housesGroup.getObjectByName(targetHouseId) as THREE.Group | null);
+              if (hGroup) {
+                hoverIndicatorGroupRef.current.position.set(hGroup.position.x, 0, hGroup.position.z);
+                const bH = hGroup.userData?.h || 1.1;
+                const rH = bH * 0.46;
+                hoveredBaseHeightRef.current = 0.08 + bH + rH + 0.65;
+                hoverIndicatorGroupRef.current.visible = true;
+              }
+            }
+
+            setHoveredHouseInfo({
+              id: targetHouseId,
+              houseNumber: houseRecord.houseNumber || '',
+              streetName: houseRecord.streetName || '',
+              screenX: e.clientX,
+              screenY: e.clientY - 24,
+            });
+            dom.style.cursor = 'pointer';
+          } else {
+            hoveredHouseIdRef.current = null;
+            if (hoverIndicatorGroupRef.current) {
+              hoverIndicatorGroupRef.current.visible = false;
+            }
+            setHoveredHouseInfo(null);
+            dom.style.cursor = 'crosshair';
+          }
+        }
+        return;
+      }
 
       const dx = e.clientX - controls.prevPointer.x;
       const dy = e.clientY - controls.prevPointer.y;
@@ -811,6 +1028,13 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
 
       if (!neighborhoodRef.current) return;
       const housesGroup = neighborhoodRef.current.housesGroup;
+
+      // If house is already targeted by Admin Cursor Tool, open it immediately!
+      if (isAdminCursorActiveRef.current && hoveredHouseIdRef.current && housesDataRef.current[hoveredHouseIdRef.current]) {
+        sounds.playSelect();
+        onSelectHouse(housesDataRef.current[hoveredHouseIdRef.current]);
+        return;
+      }
 
       // =========================================================================
       // PRIORITY 1: FLOATING TAGS (SPRITE BADGES)
@@ -939,10 +1163,19 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       }
     };
 
+    const handlePointerLeave = () => {
+      hoveredHouseIdRef.current = null;
+      if (hoverIndicatorGroupRef.current) {
+        hoverIndicatorGroupRef.current.visible = false;
+      }
+      setHoveredHouseInfo(null);
+    };
+
     dom.addEventListener('pointerdown', handlePointerDown);
     dom.addEventListener('pointermove', handlePointerMove);
     dom.addEventListener('pointerup', handlePointerUp);
     dom.addEventListener('pointercancel', handlePointerUp);
+    dom.addEventListener('pointerleave', handlePointerLeave);
     dom.addEventListener('wheel', handleWheel, { passive: false });
     dom.addEventListener('click', handleClick);
     dom.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -968,6 +1201,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       dom.removeEventListener('pointermove', handlePointerMove);
       dom.removeEventListener('pointerup', handlePointerUp);
       dom.removeEventListener('pointercancel', handlePointerUp);
+      dom.removeEventListener('pointerleave', handlePointerLeave);
       dom.removeEventListener('wheel', handleWheel);
       dom.removeEventListener('click', handleClick);
       dom.removeEventListener('touchstart', handleTouchStart);
@@ -1053,7 +1287,45 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
 
   return (
     <div className="relative w-full h-full select-none overflow-hidden touch-none">
-      <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <div
+        ref={mountRef}
+        className={`w-full h-full ${
+          isAdminCursorActive ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+        }`}
+      />
+
+      {/* Floating 3D Hover Tooltip for Admin Selector Tool */}
+      {hoveredHouseInfo && isAdminCursorActive && (
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full pb-3 transition-opacity duration-75"
+          style={{ left: hoveredHouseInfo.screenX, top: hoveredHouseInfo.screenY }}
+        >
+          <div className="flex flex-col items-center">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border-2 border-cyan-400 text-white shadow-2xl shadow-cyan-500/25 backdrop-blur-md">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1.5 leading-tight">
+                  <span className="font-black text-xs text-amber-300">
+                    {hoveredHouseInfo.houseNumber
+                      ? (hoveredHouseInfo.houseNumber.toLowerCase().includes('caseta') || hoveredHouseInfo.houseNumber.toLowerCase().includes('inicio')
+                        ? hoveredHouseInfo.houseNumber
+                        : `Casa #${hoveredHouseInfo.houseNumber}`)
+                      : 'Casa sin número'}
+                  </span>
+                  <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-semibold border border-cyan-500/30">
+                    {hoveredHouseInfo.streetName}
+                  </span>
+                </div>
+                <span className="text-[10px] text-cyan-200/90 font-bold tracking-tight mt-0.5">
+                  👉 Haz clic para personalizar
+                </span>
+              </div>
+            </div>
+            {/* Downward pointing triangle/beak */}
+            <div className="w-2.5 h-2.5 -mt-1.5 rotate-45 bg-slate-900 border-r-2 border-b-2 border-cyan-400" />
+          </div>
+        </div>
+      )}
     </div>
   );
 });

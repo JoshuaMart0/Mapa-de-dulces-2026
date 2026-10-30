@@ -12,7 +12,7 @@ import { loadHousesData, saveHousesData } from './data/housesData';
 import { HouseData, CameraPreset, TimeOfDay } from './types';
 import { sounds } from './audio/soundEffects';
 import { getClosestStreetName } from './data/streetNetwork';
-import { Navigation, Play, ShieldAlert, LogOut, Lock, Edit3, Candy } from 'lucide-react';
+import { Navigation, Play, ShieldAlert, LogOut, Lock, Edit3, Candy, MousePointerClick } from 'lucide-react';
 
 import { subscribeToHouses, saveHouseToFirestore } from './data/firestoreHousesService';
 
@@ -40,6 +40,7 @@ export default function App() {
     }
   });
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  const [isAdminCursorToolActive, setIsAdminCursorToolActive] = useState(true);
 
   // Navigation State
   const [isFollowingPlayer, setIsFollowingPlayer] = useState(false);
@@ -205,6 +206,8 @@ export default function App() {
         cameraPreset={cameraPreset}
         isFollowPlayer={isFollowingPlayer}
         onManualPan={() => setIsFollowingPlayer(false)}
+        isAdmin={isAdmin}
+        isAdminCursorActive={isAdmin && isAdminCursorToolActive}
       />
 
       {/* 360° Mobile Rotation & Zoom Controls Dock */}
@@ -287,19 +290,41 @@ export default function App() {
       {/* ========================================================= */}
       {isAdmin && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-auto max-w-[94vw] w-auto">
-          <div className="px-4 py-2.5 rounded-2xl bg-amber-950/95 border border-amber-500/60 shadow-2xl flex items-center gap-3 text-xs text-amber-200">
+          <div className="px-4 py-2.5 rounded-2xl bg-slate-900/95 border-2 border-amber-500/70 shadow-2xl flex items-center gap-3 text-xs text-amber-200 backdrop-blur-md">
             <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
-                <Edit3 className="w-3.5 h-3.5" />
+              <span className="p-1.5 rounded-lg bg-amber-500 text-slate-950 font-black shrink-0">
+                <Edit3 className="w-4 h-4" />
               </span>
               <div>
-                <span className="font-bold text-white block leading-tight">Modo Administrador Activo</span>
-                <span className="text-[11px] text-amber-300/90 leading-tight">Toca cualquier casa para editar su número o dulces</span>
+                <span className="font-black text-white block leading-tight text-xs sm:text-sm">Modo Administrador</span>
+                <span className="text-[11px] text-amber-300/90 leading-tight block">
+                  {isAdminCursorToolActive
+                    ? '🎯 Selector con Mouse Activo: Pasa el cursor sobre una casa para seleccionarla y editarla'
+                    : 'Modo navegación estándar'}
+                </span>
               </div>
             </div>
+
+            {/* Toggle Herramienta Cursor / Puntero Selector */}
+            <button
+              onClick={() => {
+                sounds.playSelect();
+                setIsAdminCursorToolActive((prev) => !prev);
+              }}
+              className={`px-3 py-1.5 rounded-xl border font-bold text-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0 ${
+                isAdminCursorToolActive
+                  ? 'bg-amber-400 text-slate-950 border-amber-200 shadow-md shadow-amber-500/40 ring-1 ring-amber-300'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700'
+              }`}
+              title="Activar o desactivar herramienta de cursor para seleccionar casas"
+            >
+              <MousePointerClick className="w-3.5 h-3.5" />
+              <span>{isAdminCursorToolActive ? 'Puntero: ON' : 'Puntero: OFF'}</span>
+            </button>
+
             <button
               onClick={handleAdminLogout}
-              className="ml-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-amber-500/40 text-amber-300 hover:text-white hover:bg-slate-800 flex items-center gap-1.5 font-semibold text-xs transition active:scale-95"
+              className="ml-1 px-3 py-1.5 rounded-xl bg-slate-800/90 border border-amber-500/30 text-amber-300 hover:text-white hover:bg-rose-950/80 hover:border-rose-500/40 flex items-center gap-1.5 font-semibold text-xs transition active:scale-95 cursor-pointer shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Salir</span>
