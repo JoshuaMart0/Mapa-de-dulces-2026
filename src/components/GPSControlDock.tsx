@@ -141,7 +141,7 @@ export const GPSControlDock: React.FC<GPSControlDockProps> = ({
               >
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    isJourneyStarted ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                    isJourneyStarted ? 'bg-emerald-400' : 'bg-slate-500'
                   }`}
                 />
                 <span>{isJourneyStarted ? 'Recorrido en Vivo' : 'En Caseta INICIO'}</span>

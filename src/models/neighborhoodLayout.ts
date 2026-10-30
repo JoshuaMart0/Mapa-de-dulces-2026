@@ -21,6 +21,9 @@ export interface BuiltNeighborhood {
   ghostsGroup: THREE.Group;
   hayBalesGroup: THREE.Group;
   streetLampsGroup: THREE.Group;
+  candyHouses: THREE.Group[];
+  animatedTrees: { tree: THREE.Group; seed: number }[];
+  animatedGhosts: { ghost: THREE.Group; baseY: number; seed: number }[];
 }
 
 /**
@@ -52,6 +55,10 @@ export function buildCompleteAestheticNeighborhood(
 
   const streetLampsGroup = new THREE.Group();
   streetLampsGroup.name = 'aestheticStreetLamps';
+
+  const candyHouses: THREE.Group[] = [];
+  const animatedTrees: { tree: THREE.Group; seed: number }[] = [];
+  const animatedGhosts: { ghost: THREE.Group; baseY: number; seed: number }[] = [];
 
   /**
    * Helper to construct a suburban block with houses facing both FRONT and BACK.
@@ -100,6 +107,9 @@ export function buildCompleteAestheticNeighborhood(
         }
       );
       housesGroup.add(northHouse);
+      if (nData?.hasCandy) {
+        candyHouses.push(northHouse);
+      }
 
       // --- 2. South Row (casas por el frente/sur, miran hacia la calle sur) ---
       const southId = `${blockId}-s-${i}`;
@@ -125,6 +135,9 @@ export function buildCompleteAestheticNeighborhood(
         }
       );
       housesGroup.add(southHouse);
+      if (sData?.hasCandy) {
+        candyHouses.push(southHouse);
+      }
     }
   };
 
@@ -325,6 +338,9 @@ export function buildCompleteAestheticNeighborhood(
     }
   );
   housesGroup.add(startHouse);
+  if (casetaData?.hasCandy ?? true) {
+    candyHouses.push(startHouse);
+  }
 
   // =========================================================
   // 12. ÁRBOLES 3D ESTILIZADOS EN EL PARQUE Y GLORIETAS
@@ -361,17 +377,17 @@ export function buildCompleteAestheticNeighborhood(
     { mx: 0.725, my: 0.310, type: 'pine', s: 1.20, c: 0x0f766e },
   ];
 
-  treeCoords.forEach((tc) => {
+  treeCoords.forEach((tc, idx) => {
     const { x, z } = mapToWorldCoords(tc.mx, tc.my, worldW, worldH);
-    if (tc.type === 'pine') {
-      treesGroup.add(createAestheticPine(x, z, tc.s, tc.c));
-    } else {
-      treesGroup.add(createAestheticDeciduousTree(x, z, tc.s, tc.c));
-    }
+    const tree = tc.type === 'pine'
+      ? createAestheticPine(x, z, tc.s, tc.c)
+      : createAestheticDeciduousTree(x, z, tc.s, tc.c);
+    treesGroup.add(tree);
+    animatedTrees.push({ tree, seed: idx * 1.5 });
   });
 
   // =========================================================
-  // 13. CALABAZAS 3D (JACK-O'-LANTERNS) CON LUZ INTERNA
+  // 13. CALABAZAS 3D (JACK-O'-LANTERNS)
   // =========================================================
   const pumpkinSpots = [
     { mx: 0.130, my: 0.305, s: 1.20, id: 'p1' }, // Parque norte
@@ -400,9 +416,11 @@ export function buildCompleteAestheticNeighborhood(
     { mx: 0.070, my: 0.080, s: 1.30, id: 'g_compass' }, // Fantasma de la rosa náutica
   ];
 
-  ghostSpots.forEach((gs) => {
+  ghostSpots.forEach((gs, idx) => {
     const { x, z } = mapToWorldCoords(gs.mx, gs.my, worldW, worldH);
-    ghostsGroup.add(createAestheticGhost(x, z, gs.s, gs.id));
+    const ghost = createAestheticGhost(x, z, gs.s, gs.id);
+    ghostsGroup.add(ghost);
+    animatedGhosts.push({ ghost, baseY: 1.6, seed: idx * 2.2 });
   });
 
   // =========================================================
@@ -450,5 +468,8 @@ export function buildCompleteAestheticNeighborhood(
     ghostsGroup,
     hayBalesGroup,
     streetLampsGroup,
+    candyHouses,
+    animatedTrees,
+    animatedGhosts,
   };
 }

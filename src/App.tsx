@@ -201,7 +201,7 @@ export default function App() {
               startJourney();
               setIsFollowingPlayer(true);
             }}
-            className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm tracking-wider shadow-2xl shadow-orange-500/50 border-2 border-amber-300 ring-4 ring-amber-500/30 flex items-center gap-2.5 active:scale-95 transition-all cursor-pointer animate-pulse"
+            className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm tracking-wider shadow-2xl shadow-orange-500/40 border-2 border-amber-300 ring-2 ring-amber-500/30 flex items-center gap-2.5 active:scale-95 transition-all cursor-pointer"
           >
             <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-slate-950 shrink-0" />
             <span className="whitespace-nowrap">COMENZAR RECORRIDO GPS</span>
@@ -209,8 +209,8 @@ export default function App() {
         </div>
       ) : (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-[90vw]">
-          <div className="px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-emerald-500/50 backdrop-blur-md shadow-xl flex items-center gap-2 text-xs text-emerald-300 font-semibold">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="px-3.5 py-1.5 rounded-full bg-slate-900/95 border border-emerald-500/50 shadow-xl flex items-center gap-2 text-xs text-emerald-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
             <span>GPS en Vivo</span>
             <button
               onClick={() => {
@@ -228,10 +228,10 @@ export default function App() {
       {/* Floating Recenter on Player Button (Ergonomic for mobile thumb access) */}
       <button
         onClick={handleRecenterOnPlayer}
-        className={`fixed top-20 right-3.5 z-30 p-3 rounded-2xl shadow-xl border backdrop-blur transition-all active:scale-90 flex items-center justify-center cursor-pointer ${
+        className={`fixed top-20 right-3.5 z-30 p-3 rounded-2xl shadow-xl border transition-all active:scale-90 flex items-center justify-center cursor-pointer ${
           isFollowingPlayer
             ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-amber-500/30 ring-2 ring-amber-400/50'
-            : 'bg-slate-900/90 hover:bg-slate-800 text-amber-400 border-amber-500/40 shadow-black/60'
+            : 'bg-slate-900/95 hover:bg-slate-800 text-amber-400 border-amber-500/40 shadow-black/60'
         }`}
         title="Centrar mapa en mi ubicación GPS"
         aria-label="Centrar en mi ubicación"

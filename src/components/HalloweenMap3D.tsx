@@ -201,12 +201,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     });
     rendererRef.current = renderer;
     renderer.setSize(width, height);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     container.replaceChildren(renderer.domElement);
 
@@ -230,8 +230,9 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     dirLight.position.set(20, 35, 15);
     dirLight.castShadow = !isSoftwareGl;
     if (dirLight.shadow) {
-      dirLight.shadow.mapSize.width = 1024;
-      dirLight.shadow.mapSize.height = 1024;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      dirLight.shadow.mapSize.width = isMobile ? 512 : 1024;
+      dirLight.shadow.mapSize.height = isMobile ? 512 : 1024;
       dirLight.shadow.camera.near = 10;
       dirLight.shadow.camera.far = 70;
       const d = 28;
@@ -311,12 +312,14 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
 
     // ==========================================
     // 3. PARK & GLORIETA SPECIAL CANDY GLOW SPOTS
-    // For community park spots (no house), they have radiant ground auras & warm lanterns
+    // For community park spots (no house), they have radiant ground auras & glowing mini pumpkins
     // ==========================================
     const specialCandySpotsGroup = new THREE.Group();
     specialCandySpotsGroup.name = 'specialParkCandyAuras';
     scene.add(specialCandySpotsGroup);
     specialCandySpotsGroupRef.current = specialCandySpotsGroup;
+
+    const parkAuraMeshes: THREE.Mesh[] = [];
 
     const parkCandyLocations = CANDY_LOCATIONS.filter(
       (c) => c.status === 'special' || c.houseNumber === 'Puesto Comunitario' || c.houseNumber === 'Área Verde' || c.houseNumber === 'Sendero #2' || c.houseNumber === 'Glorieta Central'
@@ -340,20 +343,16 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       auraRing.rotation.x = -Math.PI / 2;
       auraRing.name = 'parkAuraRing';
       spotGroup.add(auraRing);
+      parkAuraMeshes.push(auraRing);
 
-      // Warm glowing lantern point light
-      const pLight = new THREE.PointLight(new THREE.Color(spot.color), 1.6, 5.0);
-      pLight.position.y = 0.8;
-      spotGroup.add(pLight);
-
-      // Decorative mini glowing pumpkin
+      // Decorative mini glowing pumpkin with emissive radiance
       const miniPkin = new THREE.Mesh(
         new THREE.SphereGeometry(0.22, 10, 10),
         new THREE.MeshStandardMaterial({
           color: 0xf97316,
           roughness: 0.3,
           emissive: 0xea580c,
-          emissiveIntensity: 0.6,
+          emissiveIntensity: 0.8,
         })
       );
       miniPkin.position.y = 0.22;
@@ -478,28 +477,29 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       const delta = Math.min(clock.getDelta(), 0.1);
       const elapsed = clock.getElapsedTime();
 
-      // Smooth Camera Damping
+      // Smooth & Responsive Camera Damping
       const controls = cameraControlRef.current;
       controls.spherical.radius = THREE.MathUtils.damp(
         controls.spherical.radius,
         controls.desiredRadius,
-        6,
+        14,
         delta
       );
       controls.spherical.theta = THREE.MathUtils.damp(
         controls.spherical.theta,
         controls.desiredTheta,
-        6,
+        14,
         delta
       );
       controls.spherical.phi = THREE.MathUtils.damp(
         controls.spherical.phi,
         controls.desiredPhi,
-        6,
+        14,
         delta
       );
 
-      controls.target.lerp(controls.desiredTarget, 6 * delta);
+      const targetLerp = controls.isDragging ? 28 : 14;
+      controls.target.lerp(controls.desiredTarget, Math.min(1, targetLerp * delta));
 
       // Compute camera position from spherical coordinates
       const sinPhi = Math.sin(controls.spherical.phi);
@@ -565,83 +565,55 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         }
       }
 
-      // Animate candy shining effects (houses & park auras)
+      // Animate candy shining effects (houses & park auras) - O(1) direct iteration
       if (neighborhoodRef.current) {
         const nb = neighborhoodRef.current;
 
-        // Animate shining candy houses
-        nb.housesGroup.children.forEach((house, idx) => {
-          if (house.userData.hasCandy) {
-            const aura = house.getObjectByName('candyAuraRing') as THREE.Mesh | undefined;
-            if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
-              const pulse = (Math.sin(elapsed * 3.5 + idx * 0.8) + 1) * 0.5; // 0..1
-              aura.material.opacity = 0.55 + pulse * 0.4;
-              const s = 1.0 + pulse * 0.15;
-              aura.scale.set(s, s, s);
-            }
-            const outerAura = house.getObjectByName('candyOuterAuraRing') as THREE.Mesh | undefined;
-            if (outerAura && outerAura.material instanceof THREE.MeshBasicMaterial) {
-              const pulse2 = (Math.sin(elapsed * 2.8 + idx * 0.8 + 1.2) + 1) * 0.5;
-              outerAura.material.opacity = 0.25 + pulse2 * 0.35;
-              const s2 = 1.0 + pulse2 * 0.2;
-              outerAura.scale.set(s2, s2, s2);
-            }
-            const cylinder = house.getObjectByName('candyAuraCylinder') as THREE.Mesh | undefined;
-            if (cylinder && cylinder.material instanceof THREE.MeshBasicMaterial) {
-              cylinder.rotation.y = elapsed * 0.5 + idx;
-              cylinder.material.opacity = 0.12 + (Math.sin(elapsed * 3.2 + idx) + 1) * 0.12;
-            }
-            const light = house.getObjectByName('candyPointLight') as THREE.PointLight | undefined;
-            if (light) {
-              light.intensity = 2.0 + Math.sin(elapsed * 4.5 + idx * 1.3) * 0.8;
-            }
+        // Animate shining candy houses directly
+        nb.candyHouses.forEach((house, idx) => {
+          if (!house.userData.hasCandy) return;
+          const pulse = (Math.sin(elapsed * 3.5 + idx * 0.8) + 1) * 0.5;
+          const aura = house.userData.candyAuraRing as THREE.Mesh | undefined;
+          if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
+            aura.material.opacity = 0.55 + pulse * 0.4;
+            const s = 1.0 + pulse * 0.15;
+            aura.scale.set(s, s, s);
+          }
+          const outerAura = house.userData.candyOuterAuraRing as THREE.Mesh | undefined;
+          if (outerAura && outerAura.material instanceof THREE.MeshBasicMaterial) {
+            const pulse2 = (Math.sin(elapsed * 2.8 + idx * 0.8 + 1.2) + 1) * 0.5;
+            outerAura.material.opacity = 0.25 + pulse2 * 0.35;
+            const s2 = 1.0 + pulse2 * 0.2;
+            outerAura.scale.set(s2, s2, s2);
+          }
+          const cylinder = house.userData.candyAuraCylinder as THREE.Mesh | undefined;
+          if (cylinder) {
+            cylinder.rotation.y = elapsed * 0.5 + idx;
           }
         });
 
         // Trees: gentle autumn breeze sway
-        nb.treesGroup.children.forEach((tree, idx) => {
-          const seed = (tree.userData.seed as number) || idx;
+        nb.animatedTrees.forEach(({ tree, seed }) => {
           tree.rotation.z = Math.sin(elapsed * 1.5 + seed) * 0.035;
           tree.rotation.x = Math.cos(elapsed * 1.2 + seed) * 0.02;
         });
 
-        // Pumpkins: candlelight flicker
-        nb.pumpkinsGroup.children.forEach((pkin, idx) => {
-          const light = pkin.children.find((c) => c instanceof THREE.PointLight) as THREE.PointLight;
-          if (light) {
-            light.intensity = 0.85 + Math.sin(elapsed * 18 + idx * 3.7) * 0.35;
-          }
-        });
-
         // Ghosts: floating apparitions
-        nb.ghostsGroup.children.forEach((ghost, idx) => {
-          const baseY = (ghost.userData.baseY as number) || 1.6;
-          const seed = (ghost.userData.seed as number) || idx;
+        nb.animatedGhosts.forEach(({ ghost, baseY, seed }) => {
           ghost.position.y = baseY + Math.sin(elapsed * 2.2 + seed) * 0.22;
           ghost.rotation.y = Math.sin(elapsed * 1.2 + seed) * 0.35;
-        });
-
-        // Street lamps
-        nb.streetLampsGroup.children.forEach((lamp, idx) => {
-          const light = lamp.children.find((c) => c instanceof THREE.PointLight) as THREE.PointLight;
-          if (light) {
-            light.intensity = 0.65 + Math.sin(elapsed * 8 + idx * 1.9) * 0.12;
-          }
         });
       }
 
       // Animate special park auras
-      if (specialCandySpotsGroupRef.current) {
-        specialCandySpotsGroupRef.current.children.forEach((spot, idx) => {
-          const aura = spot.getObjectByName('parkAuraRing') as THREE.Mesh | undefined;
-          if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
-            const pulse = (Math.sin(elapsed * 4 + idx * 1.5) + 1) * 0.5;
-            aura.material.opacity = 0.5 + pulse * 0.45;
-            const s = 1.0 + pulse * 0.25;
-            aura.scale.set(s, s, s);
-          }
-        });
-      }
+      parkAuraMeshes.forEach((aura, idx) => {
+        if (aura.material instanceof THREE.MeshBasicMaterial) {
+          const pulse = (Math.sin(elapsed * 4 + idx * 1.5) + 1) * 0.5;
+          aura.material.opacity = 0.5 + pulse * 0.45;
+          const s = 1.0 + pulse * 0.25;
+          aura.scale.set(s, s, s);
+        }
+      });
 
       renderer.render(scene, camera);
 
@@ -701,7 +673,9 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       // PAN across the map (Free 1-finger or drag navigation for mobile and desktop)
       // Extracts exact screen-right and screen-up ground projection from active camera
       if (controls.dragButton === 0 || controls.dragButton === 1) {
-        const panSpeed = controls.spherical.radius * 0.0016;
+        // Natural touch & mouse pan:
+        // Calculate ground pan speed proportional to camera distance and FOV
+        const panSpeed = (controls.spherical.radius / 36) * 0.038;
         const camera = cameraRef.current;
 
         // Screen RIGHT vector projected on ground (XZ)
@@ -728,14 +702,14 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
           camForward.set(-sinTheta, 0, -cosTheta);
         }
 
-        // Natural touch & mouse pan:
-        // Moving cursor right (+dx) pulls map right (target shifts -camRight)
-        // Moving cursor down (+dy) pulls map down (target shifts +camForward)
         const groundDx = (-camRight.x * dx + camForward.x * dy) * panSpeed;
         const groundDz = (-camRight.z * dx + camForward.z * dy) * panSpeed;
 
         controls.desiredTarget.x += groundDx;
         controls.desiredTarget.z += groundDz;
+        // Direct move on current target so camera moves 1:1 with finger under drag
+        controls.target.x += groundDx;
+        controls.target.z += groundDz;
 
         // Keep target reasonably within neighborhood bounds
         controls.desiredTarget.x = Math.max(-WORLD_WIDTH * 0.7, Math.min(WORLD_WIDTH * 0.7, controls.desiredTarget.x));
@@ -921,6 +895,13 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         const houseGroup = neighborhoodRef.current.housesGroup.getObjectByName(houseId) as THREE.Group | undefined;
         if (houseGroup) {
           updateHouseVisualState(houseGroup, houseNumber, hasCandy);
+          const list = neighborhoodRef.current.candyHouses;
+          const idx = list.indexOf(houseGroup);
+          if (hasCandy && idx === -1) {
+            list.push(houseGroup);
+          } else if (!hasCandy && idx !== -1) {
+            list.splice(idx, 1);
+          }
         }
       }
     },

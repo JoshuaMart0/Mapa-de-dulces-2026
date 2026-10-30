@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HouseData } from '../types';
 
 // Coordinate converter from normalized map coordinates (0..1) to 3D world units (X, Z)
 export function mapToWorldCoords(mapX: number, mapY: number, worldW: number, worldH: number) {
@@ -40,65 +41,246 @@ export const CROQUIS_PALETTE = {
   ],
 };
 
-/**
- * 1. AESTHETIC 3D TOWNHOUSE
- * Multi-part composite model:
- * (1) Stone foundation plinth
- * (2) Main colorful facade walls
- * (3) Gabled beveled roof with fascia eaves and contrasting ridge beam
- * (4) Glowing warm windows with wooden muntins
- * (5) Recessed front door with entrance canopy & brass knob
- * (6) Brick chimney with stone raincap
- * (7) Micro pumpkin on the front step
- */
-export function createHouseBadgeSprite(numberStr: string, hasCandy: boolean): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 160;
-  canvas.height = 70;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.clearRect(0, 0, 160, 70);
-    // Draw rounded badge background
-    ctx.fillStyle = hasCandy ? 'rgba(217, 119, 6, 0.95)' : 'rgba(15, 23, 42, 0.88)';
-    ctx.strokeStyle = hasCandy ? '#fef08a' : 'rgba(255, 255, 255, 0.35)';
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    // Fallback round rect
-    const r = 14;
-    const x = 6, y = 6, w = 148, h = 58;
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+// =========================================================================
+// HIGH-PERFORMANCE GEOMETRY & MATERIAL REUSE CACHE
+// Eliminates thousands of redundant allocations and GPU state changes
+// =========================================================================
+class ResourcePool {
+  private boxGeos = new Map<string, THREE.BoxGeometry>();
+  private cylGeos = new Map<string, THREE.CylinderGeometry>();
+  private coneGeos = new Map<string, THREE.ConeGeometry>();
+  private sphereGeos = new Map<string, THREE.SphereGeometry>();
+  private roofGeos = new Map<string, THREE.BufferGeometry>();
+  private ringGeos = new Map<string, THREE.RingGeometry>();
+  private wallMats = new Map<number, THREE.MeshStandardMaterial>();
+  private roofMats = new Map<number, THREE.MeshStandardMaterial>();
+  private foliageMats = new Map<number, THREE.MeshStandardMaterial>();
 
-    // House Number Text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 24px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const label = hasCandy ? `✨ #${numberStr} 🍬` : `#${numberStr}`;
-    ctx.fillText(label, 80, 36);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  const mat = new THREE.SpriteMaterial({
-    map: tex,
-    transparent: true,
-    depthTest: false,
+  // Shared reusable materials
+  public foundationMat = new THREE.MeshStandardMaterial({
+    color: 0x334155,
+    roughness: 0.9,
+    metalness: 0.1,
   });
-  const sprite = new THREE.Sprite(mat);
-  sprite.name = 'houseBadgeSprite';
-  sprite.scale.set(1.5, 0.65, 1);
-  return sprite;
+
+  public frameMat = new THREE.MeshStandardMaterial({
+    color: 0x27272a,
+    roughness: 0.8,
+  });
+
+  public winMat = new THREE.MeshBasicMaterial({
+    color: 0xfef08a,
+  });
+
+  public doorMat = new THREE.MeshStandardMaterial({
+    color: 0x1c1917,
+    roughness: 0.8,
+  });
+
+  public stepMat = new THREE.MeshStandardMaterial({
+    color: 0x475569,
+    roughness: 0.9,
+  });
+
+  public handleMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    metalness: 0.8,
+    roughness: 0.2,
+  });
+
+  public chimneyMat = new THREE.MeshStandardMaterial({
+    color: 0x7c2d12,
+    roughness: 0.8,
+  });
+
+  public ridgeMat = new THREE.MeshStandardMaterial({
+    color: 0x18181b,
+    roughness: 0.7,
+  });
+
+  public pkinMat = new THREE.MeshStandardMaterial({
+    color: 0xea580c,
+    roughness: 0.45,
+    metalness: 0.05,
+    emissive: 0x9a3412,
+    emissiveIntensity: 0.35,
+  });
+
+  public pkinStemMat = new THREE.MeshStandardMaterial({
+    color: 0x15803d,
+    roughness: 0.8,
+  });
+
+  public pkinGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xfef08a,
+  });
+
+  public treeTrunkPineMat = new THREE.MeshStandardMaterial({
+    color: 0x3e2723,
+    roughness: 0.9,
+  });
+
+  public treeTrunkDecidMat = new THREE.MeshStandardMaterial({
+    color: 0x451a03,
+    roughness: 0.9,
+  });
+
+  public ironMat = new THREE.MeshStandardMaterial({
+    color: 0x18181b,
+    roughness: 0.5,
+    metalness: 0.8,
+  });
+
+  public lampGlassMat = new THREE.MeshBasicMaterial({
+    color: 0xfef08a,
+  });
+
+  public ghostMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.15,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.88,
+    emissive: 0x93c5fd,
+    emissiveIntensity: 0.45,
+  });
+
+  public ghostSkirtMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.75,
+    emissive: 0x93c5fd,
+    emissiveIntensity: 0.35,
+  });
+
+  public ghostEyeMat = new THREE.MeshBasicMaterial({
+    color: 0x0f172a,
+  });
+
+  public strawMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    roughness: 0.9,
+    metalness: 0.05,
+  });
+
+  public twineMat = new THREE.MeshBasicMaterial({
+    color: 0x78350f,
+  });
+
+  getBox(w: number, h: number, d: number) {
+    const key = `${w.toFixed(3)}_${h.toFixed(3)}_${d.toFixed(3)}`;
+    let geo = this.boxGeos.get(key);
+    if (!geo) {
+      geo = new THREE.BoxGeometry(w, h, d);
+      this.boxGeos.set(key, geo);
+    }
+    return geo;
+  }
+
+  getCylinder(rt: number, rb: number, h: number, seg: number = 8) {
+    const key = `${rt.toFixed(3)}_${rb.toFixed(3)}_${h.toFixed(3)}_${seg}`;
+    let geo = this.cylGeos.get(key);
+    if (!geo) {
+      geo = new THREE.CylinderGeometry(rt, rb, h, seg);
+      this.cylGeos.set(key, geo);
+    }
+    return geo;
+  }
+
+  getCone(r: number, h: number, seg: number = 7) {
+    const key = `${r.toFixed(3)}_${h.toFixed(3)}_${seg}`;
+    let geo = this.coneGeos.get(key);
+    if (!geo) {
+      geo = new THREE.ConeGeometry(r, h, seg);
+      this.coneGeos.set(key, geo);
+    }
+    return geo;
+  }
+
+  getSphere(r: number, ws: number = 10, hs: number = 10) {
+    const key = `${r.toFixed(3)}_${ws}_${hs}`;
+    let geo = this.sphereGeos.get(key);
+    if (!geo) {
+      geo = new THREE.SphereGeometry(r, ws, hs);
+      this.sphereGeos.set(key, geo);
+    }
+    return geo;
+  }
+
+  getRing(inner: number, outer: number, seg: number = 24) {
+    const key = `${inner.toFixed(3)}_${outer.toFixed(3)}_${seg}`;
+    let geo = this.ringGeos.get(key);
+    if (!geo) {
+      geo = new THREE.RingGeometry(inner, outer, seg);
+      this.ringGeos.set(key, geo);
+    }
+    return geo;
+  }
+
+  getRoof(w: number, d: number, bodyH: number) {
+    const roofH = bodyH * 0.46;
+    const roofOverhang = 0.09;
+    const key = `${w.toFixed(3)}_${d.toFixed(3)}_${bodyH.toFixed(3)}`;
+    let geo = this.roofGeos.get(key);
+    if (!geo) {
+      const roofShape = new THREE.Shape();
+      roofShape.moveTo(-w / 2 - roofOverhang, 0);
+      roofShape.lineTo(0, roofH);
+      roofShape.lineTo(w / 2 + roofOverhang, 0);
+      roofShape.closePath();
+
+      geo = new THREE.ExtrudeGeometry(roofShape, {
+        depth: d + roofOverhang * 2,
+        bevelEnabled: false,
+      });
+      geo.center();
+      this.roofGeos.set(key, geo);
+    }
+    return { geo, roofH, roofOverhang };
+  }
+
+  getWallMat(color: number) {
+    let mat = this.wallMats.get(color);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.65,
+        metalness: 0.1,
+      });
+      this.wallMats.set(color, mat);
+    }
+    return mat;
+  }
+
+  getRoofMat(color: number) {
+    let mat = this.roofMats.get(color);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.5,
+        metalness: 0.1,
+      });
+      this.roofMats.set(color, mat);
+    }
+    return mat;
+  }
+
+  getFoliageMat(color: number) {
+    let mat = this.foliageMats.get(color);
+    if (!mat) {
+      mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.75,
+        metalness: 0.05,
+        flatShading: true,
+      });
+      this.foliageMats.set(color, mat);
+    }
+    return mat;
+  }
 }
+
+export const pool = new ResourcePool();
 
 export interface HouseOptions {
   houseId?: string;
@@ -108,16 +290,9 @@ export interface HouseOptions {
 }
 
 /**
- * 1. AESTHETIC 3D TOWNHOUSE
- * Multi-part composite model:
- * (1) Stone foundation plinth
- * (2) Main colorful facade walls
- * (3) Gabled beveled roof with fascia eaves and contrasting ridge beam
- * (4) Glowing warm windows with wooden muntins
- * (5) Recessed front door with entrance canopy & brass knob
- * (6) Brick chimney with stone raincap
- * (7) Micro pumpkin on the front step
- * (8) House number badge & candy glow effects
+ * 1. HIGH-PERFORMANCE AESTHETIC 3D TOWNHOUSE
+ * Multi-part composite model with shared pooled geometries & materials.
+ * Window geometry is streamlined to keep draw calls minimal while preserving the cozy visual style.
  */
 export function createAestheticHouse(
   x: number,
@@ -132,7 +307,7 @@ export function createAestheticHouse(
   options?: HouseOptions
 ): THREE.Group {
   const group = new THREE.Group();
-  group.position.set(x, 0.05, z); // Flush on top of croquis plane (y = 0.05)
+  group.position.set(x, 0.05, z);
   group.name = options?.houseId || 'aestheticHouse';
   group.userData = {
     isHouse: true,
@@ -146,144 +321,88 @@ export function createAestheticHouse(
     baseY: 0.05,
   };
 
-  // (1) Stone foundation trim
+  // (1) Stone foundation
   const foundationH = 0.08;
-  const foundationGeo = new THREE.BoxGeometry(w + 0.04, foundationH, d + 0.04);
-  const foundationMat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
-    roughness: 0.9,
-    metalness: 0.1,
-  });
-  const foundation = new THREE.Mesh(foundationGeo, foundationMat);
+  const foundation = new THREE.Mesh(
+    pool.getBox(w + 0.04, foundationH, d + 0.04),
+    pool.foundationMat
+  );
   foundation.position.y = foundationH / 2;
-  foundation.receiveShadow = true;
   group.add(foundation);
 
   // (2) Main Facade Body
   const bodyH = h;
-  const bodyGeo = new THREE.BoxGeometry(w, bodyH, d);
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: wallColor,
-    roughness: 0.65,
-    metalness: 0.1,
-  });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  const body = new THREE.Mesh(
+    pool.getBox(w, bodyH, d),
+    pool.getWallMat(wallColor)
+  );
   body.position.y = foundationH + bodyH / 2;
   body.castShadow = true;
-  body.receiveShadow = true;
   group.add(body);
 
-  // (3) Gabled Roof with overhang eaves
-  // Triangular gable faces the front (+Z) and back (-Z) as illustrated in the croquis!
-  const roofH = bodyH * 0.46;
-  const roofOverhang = 0.09;
-  const roofShape = new THREE.Shape();
-  roofShape.moveTo(-w / 2 - roofOverhang, 0);
-  roofShape.lineTo(0, roofH);
-  roofShape.lineTo(w / 2 + roofOverhang, 0);
-  roofShape.closePath();
-
-  const roofGeo = new THREE.ExtrudeGeometry(roofShape, {
-    depth: d + roofOverhang * 2,
-    bevelEnabled: false,
-  });
-  roofGeo.center();
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: roofColor,
-    roughness: 0.5,
-    metalness: 0.1,
-  });
-  const roof = new THREE.Mesh(roofGeo, roofMat);
+  // (3) Gabled Roof
+  const { geo: roofGeo, roofH, roofOverhang } = pool.getRoof(w, d, bodyH);
+  const roof = new THREE.Mesh(roofGeo, pool.getRoofMat(roofColor));
   roof.position.y = foundationH + bodyH + roofH / 2;
   roof.castShadow = true;
-  roof.receiveShadow = true;
   group.add(roof);
 
-  // Roof Ridge Beam along Z axis
-  const ridgeGeo = new THREE.CylinderGeometry(0.025, 0.025, d + roofOverhang * 2.1, 6);
-  const ridgeMat = new THREE.MeshStandardMaterial({
-    color: 0x18181b,
-    roughness: 0.7,
-  });
-  const ridge = new THREE.Mesh(ridgeGeo, ridgeMat);
+  // Roof Ridge Beam
+  const ridge = new THREE.Mesh(
+    pool.getCylinder(0.025, 0.025, d + roofOverhang * 2.1, 6),
+    pool.ridgeMat
+  );
   ridge.position.y = foundationH + bodyH + roofH + 0.015;
   ridge.rotation.x = Math.PI / 2;
   group.add(ridge);
 
-  // (4) Glowing warm windows with wood frames
-  const winMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.8 });
+  // (4) Streamlined Glowing Windows (Front & Back)
+  // Window frame & glowing pane
+  const winFrameGeo = pool.getBox(w * 0.28, bodyH * 0.32, 0.02);
+  const winGlassGeo = pool.getBox(w * 0.24, bodyH * 0.28, 0.025);
 
-  const createDetailedWindow = (wx: number, wy: number) => {
+  const addWindow = (wx: number, wy: number, isBack: boolean = false) => {
+    const zOffset = isBack ? -d / 2 - 0.01 : d / 2 + 0.01;
     const winGroup = new THREE.Group();
-    winGroup.position.set(wx, wy, d / 2 + 0.015);
+    winGroup.position.set(wx, wy, zOffset);
+    if (isBack) winGroup.rotation.y = Math.PI;
 
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.25, bodyH * 0.28), winMat);
+    const frame = new THREE.Mesh(winFrameGeo, pool.frameMat);
+    const glass = new THREE.Mesh(winGlassGeo, pool.winMat);
+    winGroup.add(frame);
     winGroup.add(glass);
-
-    // Window muntin horizontal
-    const muntinH = new THREE.Mesh(new THREE.BoxGeometry(w * 0.25, 0.02, 0.01), frameMat);
-    winGroup.add(muntinH);
-
-    // Window muntin vertical
-    const muntinV = new THREE.Mesh(new THREE.BoxGeometry(0.02, bodyH * 0.28, 0.01), frameMat);
-    winGroup.add(muntinV);
-
-    // Window sill
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(w * 0.29, 0.03, 0.04), frameMat);
-    sill.position.y = -bodyH * 0.14;
-    winGroup.add(sill);
-
-    return winGroup;
+    group.add(winGroup);
   };
 
-  group.add(createDetailedWindow(-w * 0.23, foundationH + bodyH * 0.62));
-  group.add(createDetailedWindow(w * 0.23, foundationH + bodyH * 0.62));
-
-  // Back windows (so houses look architecturally complete from all orbit angles)
-  const createBackWindow = (wx: number, wy: number) => {
-    const winGroup = new THREE.Group();
-    winGroup.position.set(wx, wy, -d / 2 - 0.015);
-    winGroup.rotation.y = Math.PI;
-
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.22, bodyH * 0.24), winMat);
-    winGroup.add(glass);
-
-    const muntinH = new THREE.Mesh(new THREE.BoxGeometry(w * 0.22, 0.018, 0.01), frameMat);
-    winGroup.add(muntinH);
-
-    const muntinV = new THREE.Mesh(new THREE.BoxGeometry(0.018, bodyH * 0.24, 0.01), frameMat);
-    winGroup.add(muntinV);
-
-    return winGroup;
-  };
-  group.add(createBackWindow(-w * 0.23, foundationH + bodyH * 0.65));
-  group.add(createBackWindow(w * 0.23, foundationH + bodyH * 0.65));
+  const winY = foundationH + bodyH * 0.62;
+  addWindow(-w * 0.24, winY, false);
+  addWindow(w * 0.24, winY, false);
+  addWindow(-w * 0.24, winY, true);
+  addWindow(w * 0.24, winY, true);
 
   // (5) Recessed Front Door & Porch Step
   const doorW = w * 0.26;
   const doorH = bodyH * 0.44;
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, roughness: 0.8 });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 0.03), doorMat);
+  const door = new THREE.Mesh(
+    pool.getBox(doorW, doorH, 0.03),
+    pool.doorMat
+  );
   door.position.set(0, foundationH + doorH / 2, d / 2 + 0.015);
   group.add(door);
 
-  // Front porch step
-  const stepGeo = new THREE.BoxGeometry(doorW + 0.12, 0.04, 0.14);
-  const stepMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
-  const step = new THREE.Mesh(stepGeo, stepMat);
+  // Front step
+  const step = new THREE.Mesh(
+    pool.getBox(doorW + 0.12, 0.04, 0.14),
+    pool.stepMat
+  );
   step.position.set(0, 0.02, d / 2 + 0.07);
   group.add(step);
 
-  // Golden door handle
-  const handleMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.8, roughness: 0.2 });
-  const handle = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), handleMat);
-  handle.position.set(doorW * 0.35, foundationH + doorH * 0.5, d / 2 + 0.035);
-  group.add(handle);
-
-  // Door canopy / visor
-  const canopyGeo = new THREE.BoxGeometry(doorW + 0.1, 0.03, 0.12);
-  const canopy = new THREE.Mesh(canopyGeo, frameMat);
+  // Door canopy
+  const canopy = new THREE.Mesh(
+    pool.getBox(doorW + 0.1, 0.03, 0.12),
+    pool.frameMat
+  );
   canopy.position.set(0, foundationH + doorH + 0.02, d / 2 + 0.06);
   group.add(canopy);
 
@@ -291,32 +410,32 @@ export function createAestheticHouse(
   if (hasChimney) {
     const chimW = 0.15;
     const chimH = roofH * 1.05;
-    const chimMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.8 });
-    const chim = new THREE.Mesh(new THREE.BoxGeometry(chimW, chimH, chimW), chimMat);
+    const chim = new THREE.Mesh(
+      pool.getBox(chimW, chimH, chimW),
+      pool.chimneyMat
+    );
     chim.position.set(w * 0.25, foundationH + bodyH + roofH * 0.6, -d * 0.1);
-    chim.castShadow = true;
     group.add(chim);
 
-    // Stone raincap
-    const capMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(chimW + 0.04, 0.025, chimW + 0.04), capMat);
+    const cap = new THREE.Mesh(
+      pool.getBox(chimW + 0.04, 0.025, chimW + 0.04),
+      pool.foundationMat
+    );
     cap.position.set(w * 0.25, foundationH + bodyH + roofH * 0.6 + chimH / 2 + 0.012, -d * 0.1);
     group.add(cap);
   }
 
-  // (7) Candy glow effects around the house (No floating badge labels above houses)
+  // (7) Candy Glow System (Rings & Halo, zero heavy point lights)
   const hasCandy = Boolean(options?.hasCandy);
   const houseNumber = options?.houseNumber || '';
 
-  // Specialized Candy Glow System all around the house
   const candyGlowGroup = new THREE.Group();
   candyGlowGroup.name = 'candyGlowGroup';
   candyGlowGroup.visible = hasCandy;
 
   const maxDim = Math.max(w, d);
 
-  // 1. Primary ground aura ring around the house perimeter
-  const innerAuraGeo = new THREE.RingGeometry(maxDim * 0.45, maxDim * 1.45, 32);
+  // 1. Primary ground aura ring
   const innerAuraMat = new THREE.MeshBasicMaterial({
     color: 0xfbbf24,
     transparent: true,
@@ -324,14 +443,16 @@ export function createAestheticHouse(
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const innerAura = new THREE.Mesh(innerAuraGeo, innerAuraMat);
+  const innerAura = new THREE.Mesh(
+    pool.getRing(maxDim * 0.45, maxDim * 1.45, 24),
+    innerAuraMat
+  );
   innerAura.name = 'candyAuraRing';
   innerAura.rotation.x = -Math.PI / 2;
   innerAura.position.set(0, 0.04, 0);
   candyGlowGroup.add(innerAura);
 
-  // 2. Secondary wide corona aura (soft warm glow around the house)
-  const outerAuraGeo = new THREE.RingGeometry(maxDim * 1.3, maxDim * 2.3, 32);
+  // 2. Secondary corona aura
   const outerAuraMat = new THREE.MeshBasicMaterial({
     color: 0xf97316,
     transparent: true,
@@ -339,14 +460,16 @@ export function createAestheticHouse(
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const outerAura = new THREE.Mesh(outerAuraGeo, outerAuraMat);
+  const outerAura = new THREE.Mesh(
+    pool.getRing(maxDim * 1.3, maxDim * 2.3, 24),
+    outerAuraMat
+  );
   outerAura.name = 'candyOuterAuraRing';
   outerAura.rotation.x = -Math.PI / 2;
   outerAura.position.set(0, 0.038, 0);
   candyGlowGroup.add(outerAura);
 
-  // 3. Ethereal vertical aura halo cylinder around the house
-  const auraCylinderGeo = new THREE.CylinderGeometry(maxDim * 0.95, maxDim * 1.3, h * 1.6, 24, 1, true);
+  // 3. Vertical aura cylinder halo
   const auraCylinderMat = new THREE.MeshBasicMaterial({
     color: 0xfef08a,
     transparent: true,
@@ -354,20 +477,23 @@ export function createAestheticHouse(
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const auraCylinder = new THREE.Mesh(auraCylinderGeo, auraCylinderMat);
+  const auraCylinder = new THREE.Mesh(
+    pool.getCylinder(maxDim * 0.95, maxDim * 1.3, h * 1.6, 16),
+    auraCylinderMat
+  );
   auraCylinder.name = 'candyAuraCylinder';
   auraCylinder.position.set(0, (h * 1.6) / 2, 0);
   candyGlowGroup.add(auraCylinder);
 
-  // 4. Warm radiant point light illuminating the house and surrounding area
-  const candyLight = new THREE.PointLight(0xf59e0b, hasCandy ? 2.6 : 0, 8.0);
-  candyLight.name = 'candyPointLight';
-  candyLight.position.set(0, foundationH + bodyH * 0.8, d / 2 + 0.3);
-  candyGlowGroup.add(candyLight);
-
   group.add(candyGlowGroup);
 
-  // Propagate houseId & isHouse to all child meshes for raycasting
+  // Direct fast-access references stored on userData for O(1) animation
+  group.userData.candyGlowGroup = candyGlowGroup;
+  group.userData.candyAuraRing = innerAura;
+  group.userData.candyOuterAuraRing = outerAura;
+  group.userData.candyAuraCylinder = auraCylinder;
+
+  // Propagate houseId & isHouse to child meshes for raycasting
   group.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.userData.houseId = options?.houseId || '';
@@ -377,14 +503,12 @@ export function createAestheticHouse(
     }
   });
 
-  // Apply Y-axis rotation (0 for facing South, Math.PI for facing North)
   group.rotation.y = rotationY;
-
   return group;
 }
 
 /**
- * Updates the visual state (candy glow) of an existing 3D house without adding number badges.
+ * Updates the visual state (candy glow) of an existing 3D house without scene graph traversal.
  */
 export function updateHouseVisualState(
   houseGroup: THREE.Group,
@@ -394,42 +518,26 @@ export function updateHouseVisualState(
   houseGroup.userData.houseNumber = houseNumber;
   houseGroup.userData.hasCandy = hasCandy;
 
-  const candyGlowGroup = houseGroup.getObjectByName('candyGlowGroup');
+  const candyGlowGroup = houseGroup.userData.candyGlowGroup as THREE.Group | undefined;
   if (candyGlowGroup) {
     candyGlowGroup.visible = hasCandy;
   }
 
-  // Update candy light
-  const candyLight = houseGroup.getObjectByName('candyPointLight') as THREE.PointLight | undefined;
-  if (candyLight) {
-    candyLight.intensity = hasCandy ? 2.6 : 0;
-  }
-
-  // Update inner aura
-  const aura = houseGroup.getObjectByName('candyAuraRing') as THREE.Mesh | undefined;
+  const aura = houseGroup.userData.candyAuraRing as THREE.Mesh | undefined;
   if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
     aura.material.opacity = hasCandy ? 0.8 : 0;
   }
 
-  // Update outer aura
-  const outerAura = houseGroup.getObjectByName('candyOuterAuraRing') as THREE.Mesh | undefined;
+  const outerAura = houseGroup.userData.candyOuterAuraRing as THREE.Mesh | undefined;
   if (outerAura && outerAura.material instanceof THREE.MeshBasicMaterial) {
     outerAura.material.opacity = hasCandy ? 0.45 : 0;
   }
 
-  // Update vertical cylinder halo
-  const cylinder = houseGroup.getObjectByName('candyAuraCylinder') as THREE.Mesh | undefined;
+  const cylinder = houseGroup.userData.candyAuraCylinder as THREE.Mesh | undefined;
   if (cylinder && cylinder.material instanceof THREE.MeshBasicMaterial) {
     cylinder.material.opacity = hasCandy ? 0.22 : 0;
   }
 
-  // Remove any obsolete badge sprite if present
-  const existingBadge = houseGroup.getObjectByName('houseBadgeSprite');
-  if (existingBadge) {
-    houseGroup.remove(existingBadge);
-  }
-
-  // Propagate to meshes
   houseGroup.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.userData.houseNumber = houseNumber;
@@ -438,10 +546,8 @@ export function updateHouseVisualState(
   });
 }
 
-
 /**
- * 2. AESTHETIC PINE / CONIFER TREE
- * Layered 3-tier stylized cone tree with woody trunk and root flare
+ * 2. HIGH-PERFORMANCE AESTHETIC PINE TREE
  */
 export function createAestheticPine(
   x: number,
@@ -454,46 +560,36 @@ export function createAestheticPine(
   tree.userData = { type: 'pine', seed: Math.random() * 10 };
 
   // Trunk
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 });
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * scale, 0.14 * scale, 0.8 * scale, 6), trunkMat);
+  const trunk = new THREE.Mesh(
+    pool.getCylinder(0.08 * scale, 0.14 * scale, 0.8 * scale, 6),
+    pool.treeTrunkPineMat
+  );
   trunk.position.y = 0.4 * scale;
-  trunk.castShadow = true;
   tree.add(trunk);
 
-  // Foliage Material with flat shading for charming low-poly look
-  const folMat = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.75,
-    metalness: 0.05,
-    flatShading: true,
-  });
+  const folMat = pool.getFoliageMat(color);
 
-  // Tier 1 (Bottom large cone)
-  const cone1 = new THREE.Mesh(new THREE.ConeGeometry(0.85 * scale, 0.95 * scale, 7), folMat);
+  // Cones
+  const cone1 = new THREE.Mesh(pool.getCone(0.85 * scale, 0.95 * scale, 6), folMat);
   cone1.position.y = 0.9 * scale;
   cone1.castShadow = true;
   tree.add(cone1);
 
-  // Tier 2 (Middle cone)
-  const cone2 = new THREE.Mesh(new THREE.ConeGeometry(0.68 * scale, 0.85 * scale, 7), folMat);
+  const cone2 = new THREE.Mesh(pool.getCone(0.68 * scale, 0.85 * scale, 6), folMat);
   cone2.position.y = 1.45 * scale;
   cone2.rotation.y = 0.35;
-  cone2.castShadow = true;
   tree.add(cone2);
 
-  // Tier 3 (Top crown cone)
-  const cone3 = new THREE.Mesh(new THREE.ConeGeometry(0.48 * scale, 0.75 * scale, 7), folMat);
+  const cone3 = new THREE.Mesh(pool.getCone(0.48 * scale, 0.75 * scale, 6), folMat);
   cone3.position.y = 1.95 * scale;
   cone3.rotation.y = -0.2;
-  cone3.castShadow = true;
   tree.add(cone3);
 
   return tree;
 }
 
 /**
- * 3. AESTHETIC DECIDUOUS ROUND TREE
- * Fluffy cloud-like canopy with multiple lobed spheres
+ * 3. HIGH-PERFORMANCE AESTHETIC DECIDUOUS TREE
  */
 export function createAestheticDeciduousTree(
   x: number,
@@ -505,46 +601,38 @@ export function createAestheticDeciduousTree(
   tree.position.set(x, 0.05, z);
   tree.userData = { type: 'deciduous', seed: Math.random() * 10 };
 
-  // Trunk
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09 * scale, 0.16 * scale, 0.9 * scale, 6), trunkMat);
+  const trunk = new THREE.Mesh(
+    pool.getCylinder(0.09 * scale, 0.16 * scale, 0.9 * scale, 6),
+    pool.treeTrunkDecidMat
+  );
   trunk.position.y = 0.45 * scale;
-  trunk.castShadow = true;
   tree.add(trunk);
 
-  // Fluffy multi-lobed canopy
-  const folMat = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.7,
-    flatShading: true,
-  });
+  const folMat = pool.getFoliageMat(color);
 
-  const centerSphere = new THREE.Mesh(new THREE.DodecahedronGeometry(0.68 * scale, 1), folMat);
+  const centerSphere = new THREE.Mesh(pool.getSphere(0.68 * scale, 8, 8), folMat);
   centerSphere.position.y = 1.35 * scale;
   centerSphere.castShadow = true;
   tree.add(centerSphere);
 
-  const lobe1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.48 * scale, 1), folMat);
+  const lobe1 = new THREE.Mesh(pool.getSphere(0.48 * scale, 6, 6), folMat);
   lobe1.position.set(-0.35 * scale, 1.25 * scale, 0.2 * scale);
-  lobe1.castShadow = true;
   tree.add(lobe1);
 
-  const lobe2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.52 * scale, 1), folMat);
+  const lobe2 = new THREE.Mesh(pool.getSphere(0.52 * scale, 6, 6), folMat);
   lobe2.position.set(0.35 * scale, 1.3 * scale, -0.15 * scale);
-  lobe2.castShadow = true;
   tree.add(lobe2);
 
-  const topLobe = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45 * scale, 1), folMat);
+  const topLobe = new THREE.Mesh(pool.getSphere(0.45 * scale, 6, 6), folMat);
   topLobe.position.set(0.05 * scale, 1.7 * scale, 0.05 * scale);
-  topLobe.castShadow = true;
   tree.add(topLobe);
 
   return tree;
 }
 
 /**
- * 4. AESTHETIC 3D PUMPKIN (JACK-O'-LANTERN)
- * Multi-lobed ribbed sphere with curved green stem, carved glowing face, and inner candle flame
+ * 4. HIGH-PERFORMANCE AESTHETIC PUMPKIN (JACK-O'-LANTERN)
+ * Self-illuminating carved face and glowing emissive body without heavy point lights.
  */
 export function createAestheticPumpkin(
   x: number,
@@ -557,58 +645,41 @@ export function createAestheticPumpkin(
   pkinGroup.name = `pumpkin_${id}`;
 
   const r = 0.32 * scale;
-  const pkinMat = new THREE.MeshStandardMaterial({
-    color: 0xea580c,
-    roughness: 0.45,
-    metalness: 0.05,
-  });
-
-  // Base pumpkin body
-  const body = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), pkinMat);
+  const body = new THREE.Mesh(pool.getSphere(r, 10, 8), pool.pkinMat);
   body.scale.set(1.18, 0.92, 1.18);
   body.position.y = r * 0.92;
-  body.castShadow = true;
   pkinGroup.add(body);
 
-  // Curved Stem
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * scale, 0.05 * scale, 0.22 * scale, 6), stemMat);
+  // Stem
+  const stem = new THREE.Mesh(
+    pool.getCylinder(0.035 * scale, 0.05 * scale, 0.22 * scale, 6),
+    pool.pkinStemMat
+  );
   stem.position.set(0, (r * 0.92) * 2 + 0.08 * scale, 0);
   stem.rotation.z = 0.25;
   stem.rotation.x = -0.15;
   pkinGroup.add(stem);
 
-  // Glowing Carved Facial Features
-  const glowMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-
-  // Left Eye
-  const eyeL = new THREE.Mesh(new THREE.ConeGeometry(0.065 * scale, 0.06 * scale, 3), glowMat);
+  // Carved Eyes & Mouth
+  const eyeL = new THREE.Mesh(pool.getCone(0.065 * scale, 0.06 * scale, 3), pool.pkinGlowMat);
   eyeL.position.set(-0.11 * scale, r * 1.1, r * 1.12);
   eyeL.rotation.x = Math.PI / 2;
   pkinGroup.add(eyeL);
 
-  // Right Eye
-  const eyeR = new THREE.Mesh(new THREE.ConeGeometry(0.065 * scale, 0.06 * scale, 3), glowMat);
+  const eyeR = new THREE.Mesh(pool.getCone(0.065 * scale, 0.06 * scale, 3), pool.pkinGlowMat);
   eyeR.position.set(0.11 * scale, r * 1.1, r * 1.12);
   eyeR.rotation.x = Math.PI / 2;
   pkinGroup.add(eyeR);
 
-  // Jagged Mouth
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.18 * scale, 0.05 * scale, 0.04 * scale), glowMat);
+  const mouth = new THREE.Mesh(pool.getBox(0.18 * scale, 0.05 * scale, 0.04 * scale), pool.pkinGlowMat);
   mouth.position.set(0, r * 0.75, r * 1.14);
   pkinGroup.add(mouth);
-
-  // Warm candlelight point light
-  const candleLight = new THREE.PointLight(0xf59e0b, 1.1, 4.0 * scale);
-  candleLight.position.set(0, r * 1.0, r * 0.5);
-  pkinGroup.add(candleLight);
 
   return pkinGroup;
 }
 
 /**
- * 5. AESTHETIC 3D GHOST
- * Ethereal floating apparition with translucent glow, floating animation support
+ * 5. HIGH-PERFORMANCE AESTHETIC GHOST
  */
 export function createAestheticGhost(
   x: number,
@@ -620,45 +691,26 @@ export function createAestheticGhost(
   ghost.position.set(x, 1.6, z);
   ghost.userData = { baseY: 1.6, seed: Math.random() * 10, id };
 
-  const ghostMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.15,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.88,
-    emissive: 0x93c5fd,
-    emissiveIntensity: 0.45,
-  });
-
-  // Dome head
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42 * scale, 16, 16), ghostMat);
+  const head = new THREE.Mesh(pool.getSphere(0.42 * scale, 12, 12), pool.ghostMat);
   head.scale.set(0.9, 1.3, 0.9);
   ghost.add(head);
 
-  // Bottom skirt ripple
-  const skirtMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.75,
-    emissive: 0x93c5fd,
-    emissiveIntensity: 0.35,
-  });
-  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.38 * scale, 0.48 * scale, 0.45 * scale, 12, 1, true), skirtMat);
+  const skirt = new THREE.Mesh(
+    pool.getCylinder(0.38 * scale, 0.48 * scale, 0.45 * scale, 10),
+    pool.ghostSkirtMat
+  );
   skirt.position.y = -0.35 * scale;
   ghost.add(skirt);
 
-  // Dark expressive eyes
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.075 * scale, 8, 8), eyeMat);
+  const eyeL = new THREE.Mesh(pool.getSphere(0.075 * scale, 6, 6), pool.ghostEyeMat);
   eyeL.position.set(-0.14 * scale, 0.12 * scale, 0.35 * scale);
   ghost.add(eyeL);
 
-  const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.075 * scale, 8, 8), eyeMat);
+  const eyeR = new THREE.Mesh(pool.getSphere(0.075 * scale, 6, 6), pool.ghostEyeMat);
   eyeR.position.set(0.14 * scale, 0.12 * scale, 0.35 * scale);
   ghost.add(eyeR);
 
-  // Spooky mouth
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.065 * scale, 8, 8), eyeMat);
+  const mouth = new THREE.Mesh(pool.getSphere(0.065 * scale, 6, 6), pool.ghostEyeMat);
   mouth.position.set(0, -0.06 * scale, 0.37 * scale);
   mouth.scale.set(0.8, 1.4, 0.8);
   ghost.add(mouth);
@@ -667,8 +719,7 @@ export function createAestheticGhost(
 }
 
 /**
- * 6. AESTHETIC HAY BALE
- * Textured golden straw cylinder with twine bindings
+ * 6. HIGH-PERFORMANCE AESTHETIC HAY BALE
  */
 export function createAestheticHayBale(
   x: number,
@@ -682,37 +733,18 @@ export function createAestheticHayBale(
   const r = 0.3 * scale;
   const l = 0.65 * scale;
 
-  const strawMat = new THREE.MeshStandardMaterial({
-    color: 0xf59e0b,
-    roughness: 0.9,
-    metalness: 0.05,
-  });
-  const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 16), strawMat);
+  const cylinder = new THREE.Mesh(pool.getCylinder(r, r, l, 12), pool.strawMat);
   cylinder.rotation.z = Math.PI / 2;
   cylinder.position.y = r;
-  cylinder.castShadow = true;
-  cylinder.receiveShadow = true;
   baleGroup.add(cylinder);
-
-  // Twine ropes
-  const twineMat = new THREE.MeshBasicMaterial({ color: 0x78350f });
-  const twine1 = new THREE.Mesh(new THREE.TorusGeometry(r + 0.01, 0.02, 6, 24), twineMat);
-  twine1.rotation.y = Math.PI / 2;
-  twine1.position.set(-l * 0.25, r, 0);
-  baleGroup.add(twine1);
-
-  const twine2 = new THREE.Mesh(new THREE.TorusGeometry(r + 0.01, 0.02, 6, 24), twineMat);
-  twine2.rotation.y = Math.PI / 2;
-  twine2.position.set(l * 0.25, r, 0);
-  baleGroup.add(twine2);
 
   baleGroup.rotation.y = rotationY;
   return baleGroup;
 }
 
 /**
- * 7. AESTHETIC VINTAGE STREET LAMP
- * Victorian wrought-iron lamp post with warm amber lantern cage & point light
+ * 7. HIGH-PERFORMANCE AESTHETIC STREET LAMP
+ * Victorian wrought-iron lamp post with warm luminous lantern glass.
  */
 export function createAestheticStreetLamp(
   x: number,
@@ -722,42 +754,30 @@ export function createAestheticStreetLamp(
   const lamp = new THREE.Group();
   lamp.position.set(x, 0.05, z);
 
-  const ironMat = new THREE.MeshStandardMaterial({
-    color: 0x18181b,
-    roughness: 0.5,
-    metalness: 0.8,
-  });
-
   // Base plinth
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * scale, 0.12 * scale, 0.15 * scale, 8), ironMat);
+  const base = new THREE.Mesh(pool.getCylinder(0.08 * scale, 0.12 * scale, 0.15 * scale, 6), pool.ironMat);
   base.position.y = 0.075 * scale;
   lamp.add(base);
 
   // Pole
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * scale, 0.045 * scale, 1.4 * scale, 8), ironMat);
+  const pole = new THREE.Mesh(pool.getCylinder(0.035 * scale, 0.045 * scale, 1.4 * scale, 6), pool.ironMat);
   pole.position.y = (0.15 + 0.7) * scale;
   lamp.add(pole);
 
   // Lantern collar
-  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * scale, 0.04 * scale, 0.06 * scale, 6), ironMat);
+  const collar = new THREE.Mesh(pool.getCylinder(0.07 * scale, 0.04 * scale, 0.06 * scale, 6), pool.ironMat);
   collar.position.y = 1.58 * scale;
   lamp.add(collar);
 
   // Glowing lantern glass
-  const glassMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.065 * scale, 0.05 * scale, 0.16 * scale, 6), glassMat);
+  const glass = new THREE.Mesh(pool.getCylinder(0.065 * scale, 0.05 * scale, 0.16 * scale, 6), pool.lampGlassMat);
   glass.position.y = 1.68 * scale;
   lamp.add(glass);
 
-  // Lantern iron cap
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.09 * scale, 0.08 * scale, 6), ironMat);
+  // Lantern cap
+  const cap = new THREE.Mesh(pool.getCone(0.09 * scale, 0.08 * scale, 6), pool.ironMat);
   cap.position.y = 1.8 * scale;
   lamp.add(cap);
-
-  // Warm amber street glow light
-  const light = new THREE.PointLight(0xfef08a, 0.65, 4.0 * scale);
-  light.position.y = 1.7 * scale;
-  lamp.add(light);
 
   return lamp;
 }
