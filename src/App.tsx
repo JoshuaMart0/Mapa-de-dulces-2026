@@ -200,7 +200,10 @@ export default function App() {
         ref={mapRef}
         playerPos={playerPos}
         selectedHouseId={selectedHouse?.id ?? null}
-        onSelectHouse={(house) => setSelectedHouse(house)}
+        onSelectHouse={(house) => {
+          if (!isAdmin && !house.hasCandy) return;
+          setSelectedHouse(house);
+        }}
         housesData={housesData}
         timeOfDay={timeOfDay}
         cameraPreset={cameraPreset}

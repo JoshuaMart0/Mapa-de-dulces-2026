@@ -81,6 +81,11 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
   const hoveredHouseIdRef = useRef<string | null>(null);
   const hoveredBaseHeightRef = useRef<number>(2.2);
   const isAdminCursorActiveRef = useRef<boolean>(Boolean(isAdminCursorActive));
+  const isAdminRef = useRef<boolean>(Boolean(isAdmin));
+
+  useEffect(() => {
+    isAdminRef.current = Boolean(isAdmin);
+  }, [isAdmin]);
 
   useEffect(() => {
     isAdminCursorActiveRef.current = Boolean(isAdminCursorActive);
@@ -1118,8 +1123,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
           const hitSprite = badgeHits[0].object as THREE.Sprite;
           const targetHouseId = hitSprite.userData?.houseId;
           if (targetHouseId && housesDataRef.current[targetHouseId]) {
+            const house = housesDataRef.current[targetHouseId];
+            if (!isAdminRef.current && !house.hasCandy) {
+              return;
+            }
             sounds.playSelect();
-            onSelectHouse(housesDataRef.current[targetHouseId]);
+            onSelectHouse(house);
             return;
           }
         }
@@ -1146,8 +1155,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         }
 
         if (closestTagHouseId && housesDataRef.current[closestTagHouseId]) {
+          const house = housesDataRef.current[closestTagHouseId];
+          if (!isAdminRef.current && !house.hasCandy) {
+            return;
+          }
           sounds.playSelect();
-          onSelectHouse(housesDataRef.current[closestTagHouseId]);
+          onSelectHouse(house);
           return;
         }
       }
@@ -1155,6 +1168,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       // =========================================================================
       // PRIORITY 2: PHYSICAL HOUSE GEOMETRY (Roof, Walls, Foundation, Door)
       // Only runs if no tag was tapped. Auras, ground rings, and trees are ignored.
+      // Participants can ONLY select houses with hasCandy === true.
       // =========================================================================
       const houseIntersects = _raycaster.intersectObjects(housesGroup.children, true);
       for (const hit of houseIntersects) {
@@ -1180,8 +1194,13 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         }
 
         if (targetHouseId && housesDataRef.current[targetHouseId]) {
+          const house = housesDataRef.current[targetHouseId];
+          // User requirement: "del lado de el visitante o participante, que las casas que no tienen actividada la opcion de repartir dulce, no se pueden seleccionar. Solamente las que tienen la etiqueta de dulce activado pueden ser seleccionados."
+          if (!isAdminRef.current && !house.hasCandy) {
+            return;
+          }
           sounds.playSelect();
-          onSelectHouse(housesDataRef.current[targetHouseId]);
+          onSelectHouse(house);
           return;
         }
       }
