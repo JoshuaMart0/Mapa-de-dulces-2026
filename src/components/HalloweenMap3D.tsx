@@ -623,26 +623,22 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       if (neighborhoodRef.current) {
         const nb = neighborhoodRef.current;
 
-        // Animate shining candy houses directly
+        // Animate shining candy houses directly with subtle, gentle glow
         nb.candyHouses.forEach((house, idx) => {
           if (!house.userData.hasCandy) return;
-          const pulse = (Math.sin(elapsed * 3.5 + idx * 0.8) + 1) * 0.5;
+          const pulse = (Math.sin(elapsed * 2.5 + idx * 0.8) + 1) * 0.5;
           const aura = house.userData.candyAuraRing as THREE.Mesh | undefined;
           if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
-            aura.material.opacity = 0.55 + pulse * 0.4;
-            const s = 1.0 + pulse * 0.15;
+            aura.material.opacity = 0.16 + pulse * 0.10; // subtle range 0.16 - 0.26
+            const s = 1.0 + pulse * 0.08;
             aura.scale.set(s, s, s);
           }
           const outerAura = house.userData.candyOuterAuraRing as THREE.Mesh | undefined;
           if (outerAura && outerAura.material instanceof THREE.MeshBasicMaterial) {
-            const pulse2 = (Math.sin(elapsed * 2.8 + idx * 0.8 + 1.2) + 1) * 0.5;
-            outerAura.material.opacity = 0.25 + pulse2 * 0.35;
-            const s2 = 1.0 + pulse2 * 0.2;
+            const pulse2 = (Math.sin(elapsed * 2.0 + idx * 0.8 + 1.2) + 1) * 0.5;
+            outerAura.material.opacity = 0.05 + pulse2 * 0.05; // delicate corona 0.05 - 0.10
+            const s2 = 1.0 + pulse2 * 0.10;
             outerAura.scale.set(s2, s2, s2);
-          }
-          const cylinder = house.userData.candyAuraCylinder as THREE.Mesh | undefined;
-          if (cylinder) {
-            cylinder.rotation.y = elapsed * 0.5 + idx;
           }
         });
 
@@ -797,56 +793,111 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       controls.desiredRadius = Math.max(12, Math.min(85, controls.desiredRadius * zoomFactor));
     };
 
-    // Click / Tap detection for selecting house (tag label, roof, hit box or facade)
+    // Click / Tap detection for selecting house with STRICT TAG PRIORITY
+    // "Dale prioridad a las tags cuando se seleccionen en vez de las casas"
     const handleClick = (e: MouseEvent) => {
       const controls = cameraControlRef.current;
-      // If user dragged substantially, it was a pan, not a tap (tolerance adapted for mobile touchscreens)
-      if (controls.dragDistance > 20) return;
+      // If user dragged substantially, it was a pan, not a tap
+      if (controls.dragDistance > 16) return;
 
       const rect = dom.getBoundingClientRect();
-      _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      const clickX = e.clientX;
+      const clickY = e.clientY;
+
+      _pointer.x = ((clickX - rect.left) / rect.width) * 2 - 1;
+      _pointer.y = -((clickY - rect.top) / rect.height) * 2 + 1;
 
       _raycaster.setFromCamera(_pointer, camera);
 
-      // Check if clicked a house (hitBox, floating sprite tag, or building geometry)
-      if (neighborhoodRef.current) {
-        const houseIntersects = _raycaster.intersectObjects(
-          neighborhoodRef.current.housesGroup.children,
-          true
-        );
-        if (houseIntersects.length > 0) {
-          let targetHouseId: string | null = null;
+      if (!neighborhoodRef.current) return;
+      const housesGroup = neighborhoodRef.current.housesGroup;
 
-          // Find houseId either from direct object (hitBox, sprite) or ascending the tree
-          for (const hit of houseIntersects) {
-            let cur: THREE.Object3D | null = hit.object;
-            if (cur.userData && cur.userData.houseId) {
-              targetHouseId = cur.userData.houseId;
-              break;
-            }
-            while (cur && cur !== neighborhoodRef.current.housesGroup) {
-              if (cur.userData && cur.userData.isHouse && cur.userData.houseId) {
-                targetHouseId = cur.userData.houseId;
-                break;
-              }
-              cur = cur.parent;
-            }
-            if (targetHouseId) break;
+      // =========================================================================
+      // PRIORITY 1: FLOATING TAGS (SPRITE BADGES)
+      // =========================================================================
+      const visibleBadges: THREE.Sprite[] = [];
+      housesGroup.traverse((child) => {
+        if (child instanceof THREE.Sprite && child.name === 'houseBadgeSprite' && child.visible) {
+          visibleBadges.push(child);
+        }
+      });
+
+      if (visibleBadges.length > 0) {
+        // 1A. Direct 3D Raycast on all visible tags first
+        const badgeHits = _raycaster.intersectObjects(visibleBadges, false);
+        if (badgeHits.length > 0) {
+          const hitSprite = badgeHits[0].object as THREE.Sprite;
+          const targetHouseId = hitSprite.userData?.houseId;
+          if (targetHouseId && housesDataRef.current[targetHouseId]) {
+            sounds.playSelect();
+            onSelectHouse(housesDataRef.current[targetHouseId]);
+            return;
           }
+        }
 
-          if (targetHouseId) {
-            const houseRecord = housesDataRef.current[targetHouseId];
-            if (houseRecord) {
-              sounds.playSelect();
-              onSelectHouse(houseRecord);
-              return;
+        // 1B. Touch Screen-Space Proximity (within 44px of floating badge center)
+        // Solves mobile finger inaccuracy when tapping tags
+        const badgeWorldPos = new THREE.Vector3();
+        let closestTagHouseId: string | null = null;
+        let minPixelDist = 44;
+
+        for (const badge of visibleBadges) {
+          badge.getWorldPosition(badgeWorldPos);
+          badgeWorldPos.project(camera);
+          // Only test if in front of camera lens (NDC z < 1)
+          if (badgeWorldPos.z < 1) {
+            const screenX = ((badgeWorldPos.x + 1) * 0.5) * rect.width + rect.left;
+            const screenY = ((-badgeWorldPos.y + 1) * 0.5) * rect.height + rect.top;
+            const dist = Math.hypot(screenX - clickX, screenY - clickY);
+            if (dist < minPixelDist) {
+              minPixelDist = dist;
+              closestTagHouseId = badge.userData?.houseId || null;
             }
           }
         }
+
+        if (closestTagHouseId && housesDataRef.current[closestTagHouseId]) {
+          sounds.playSelect();
+          onSelectHouse(housesDataRef.current[closestTagHouseId]);
+          return;
+        }
       }
-      // Note: Ground clicking does NOT move the avatar per user requirement.
-      // The avatar position strictly follows GPS tracking starting from INICIO once "Comenzar" is pressed.
+
+      // =========================================================================
+      // PRIORITY 2: PHYSICAL HOUSE GEOMETRY (Roof, Walls, Foundation, Door)
+      // Only runs if no tag was tapped. Auras, ground rings, and trees are ignored.
+      // =========================================================================
+      const houseIntersects = _raycaster.intersectObjects(housesGroup.children, true);
+      for (const hit of houseIntersects) {
+        const obj = hit.object;
+
+        // Strictly ignore auras, halos, and hitboxes
+        if (
+          obj.userData?.isAura ||
+          obj.name?.includes('Aura') ||
+          obj.name?.includes('Cylinder') ||
+          obj.name?.includes('HitBox')
+        ) {
+          continue;
+        }
+
+        let cur: THREE.Object3D | null = obj;
+        let targetHouseId: string | null = cur.userData?.houseId || null;
+
+        while (cur && cur !== housesGroup && !targetHouseId) {
+          if (cur.userData?.isHouse && cur.userData?.houseId) {
+            targetHouseId = cur.userData.houseId;
+            break;
+          }
+          cur = cur.parent;
+        }
+
+        if (targetHouseId && housesDataRef.current[targetHouseId]) {
+          sounds.playSelect();
+          onSelectHouse(housesDataRef.current[targetHouseId]);
+          return;
+        }
+      }
     };
 
     // Multi-touch gestures (Pinch-to-zoom & two-finger rotate)

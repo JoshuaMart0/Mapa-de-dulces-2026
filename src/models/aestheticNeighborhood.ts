@@ -425,7 +425,7 @@ export function createAestheticHouse(
     group.add(cap);
   }
 
-  // (7) Candy Glow System (Rings & Halo, zero heavy point lights)
+  // (7) Subtle Candy Glow System (Soft, delicate ground rings, zero raycast interference)
   const hasCandy = Boolean(options?.hasCandy);
   const houseNumber = options?.houseNumber || '';
 
@@ -435,55 +435,43 @@ export function createAestheticHouse(
 
   const maxDim = Math.max(w, d);
 
-  // 1. Primary ground aura ring
+  // 1. Primary soft ground aura ring (subtle warm amber)
   const innerAuraMat = new THREE.MeshBasicMaterial({
     color: 0xfbbf24,
-    transparent: true,
-    opacity: hasCandy ? 0.8 : 0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const innerAura = new THREE.Mesh(
-    pool.getRing(maxDim * 0.45, maxDim * 1.45, 24),
-    innerAuraMat
-  );
-  innerAura.name = 'candyAuraRing';
-  innerAura.rotation.x = -Math.PI / 2;
-  innerAura.position.set(0, 0.052, 0);
-  candyGlowGroup.add(innerAura);
-
-  // 2. Secondary corona aura
-  const outerAuraMat = new THREE.MeshBasicMaterial({
-    color: 0xf97316,
-    transparent: true,
-    opacity: hasCandy ? 0.45 : 0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const outerAura = new THREE.Mesh(
-    pool.getRing(maxDim * 1.3, maxDim * 2.3, 24),
-    outerAuraMat
-  );
-  outerAura.name = 'candyOuterAuraRing';
-  outerAura.rotation.x = -Math.PI / 2;
-  outerAura.position.set(0, 0.051, 0);
-  candyGlowGroup.add(outerAura);
-
-  // 3. Vertical aura cylinder halo
-  const auraCylinderMat = new THREE.MeshBasicMaterial({
-    color: 0xfef08a,
     transparent: true,
     opacity: hasCandy ? 0.22 : 0,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const auraCylinder = new THREE.Mesh(
-    pool.getCylinder(maxDim * 0.95, maxDim * 1.3, h * 1.6, 16),
-    auraCylinderMat
+  const innerAura = new THREE.Mesh(
+    pool.getRing(maxDim * 0.45, maxDim * 1.35, 24),
+    innerAuraMat
   );
-  auraCylinder.name = 'candyAuraCylinder';
-  auraCylinder.position.set(0, (h * 1.6) / 2 + 0.05, 0);
-  candyGlowGroup.add(auraCylinder);
+  innerAura.name = 'candyAuraRing';
+  innerAura.rotation.x = -Math.PI / 2;
+  innerAura.position.set(0, 0.052, 0);
+  innerAura.raycast = () => {}; // Never intercept pointer clicks
+  innerAura.userData = { isAura: true };
+  candyGlowGroup.add(innerAura);
+
+  // 2. Secondary delicate corona aura (soft warm orange)
+  const outerAuraMat = new THREE.MeshBasicMaterial({
+    color: 0xf97316,
+    transparent: true,
+    opacity: hasCandy ? 0.08 : 0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const outerAura = new THREE.Mesh(
+    pool.getRing(maxDim * 1.25, maxDim * 2.05, 24),
+    outerAuraMat
+  );
+  outerAura.name = 'candyOuterAuraRing';
+  outerAura.rotation.x = -Math.PI / 2;
+  outerAura.position.set(0, 0.051, 0);
+  outerAura.raycast = () => {}; // Never intercept pointer clicks
+  outerAura.userData = { isAura: true };
+  candyGlowGroup.add(outerAura);
 
   // Attach candy glow group directly to the house group
   group.add(candyGlowGroup);
@@ -500,35 +488,18 @@ export function createAestheticHouse(
   group.add(badge);
   group.userData.houseBadgeSprite = badge;
 
-  // (9) Generous invisible hit volume covering house AND the entire floating tag above it
-  const totalHitHeight = foundationH + bodyH + roofH + 2.8;
-  const hitMesh = new THREE.Mesh(
-    pool.getBox(w * 1.6, totalHitHeight, d * 1.6),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-    })
-  );
-  hitMesh.position.set(0, totalHitHeight / 2, 0);
-  hitMesh.name = 'houseClickHitBox';
-  hitMesh.userData = {
-    isHouse: true,
-    houseId: options?.houseId || '',
-    houseNumber,
-    streetName: options?.streetName || '',
-  };
-  group.add(hitMesh);
-
   // Direct fast-access references stored on userData for O(1) animation
   group.userData.candyGlowGroup = candyGlowGroup;
   group.userData.candyAuraRing = innerAura;
   group.userData.candyOuterAuraRing = outerAura;
-  group.userData.candyAuraCylinder = auraCylinder;
 
-  // Propagate houseId & isHouse to child meshes for raycasting
+  // Propagate houseId & isHouse ONLY to actual house building meshes
   group.traverse((child) => {
     if (child instanceof THREE.Mesh) {
+      if (child.name?.includes('Aura') || child.userData?.isAura) {
+        child.userData.isAura = true;
+        return;
+      }
       child.userData.houseId = options?.houseId || '';
       child.userData.isHouse = true;
       child.userData.houseNumber = houseNumber;
@@ -660,17 +631,12 @@ export function updateHouseVisualState(
 
   const aura = houseGroup.userData.candyAuraRing as THREE.Mesh | undefined;
   if (aura && aura.material instanceof THREE.MeshBasicMaterial) {
-    aura.material.opacity = hasCandy ? 0.8 : 0;
+    aura.material.opacity = hasCandy ? 0.22 : 0;
   }
 
   const outerAura = houseGroup.userData.candyOuterAuraRing as THREE.Mesh | undefined;
   if (outerAura && outerAura.material instanceof THREE.MeshBasicMaterial) {
-    outerAura.material.opacity = hasCandy ? 0.45 : 0;
-  }
-
-  const cylinder = houseGroup.userData.candyAuraCylinder as THREE.Mesh | undefined;
-  if (cylinder && cylinder.material instanceof THREE.MeshBasicMaterial) {
-    cylinder.material.opacity = hasCandy ? 0.22 : 0;
+    outerAura.material.opacity = hasCandy ? 0.08 : 0;
   }
 
   // Update floating house number badge above roof
@@ -704,6 +670,10 @@ export function updateHouseVisualState(
 
   houseGroup.traverse((child) => {
     if (child instanceof THREE.Mesh) {
+      if (child.name?.includes('Aura') || child.userData?.isAura) {
+        child.userData.isAura = true;
+        return;
+      }
       child.userData.houseNumber = houseNumber;
       child.userData.hasCandy = hasCandy;
     }
