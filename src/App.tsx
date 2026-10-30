@@ -367,18 +367,22 @@ export default function App() {
       />
 
       {/* House Modal (View Mode for attendees, Edit Mode for Admin) */}
-      {selectedHouse && (
-        <HouseModal
-          house={selectedHouse}
-          onClose={() => setSelectedHouse(null)}
-          onSave={handleSaveHouse}
-          isCandyCollected={collectedCandyIds.has(selectedHouse.id)}
-          onToggleCollected={handleToggleCollectedCandy}
-          distanceMeters={getCoordsDistanceMeters(selectedHouse.mapX, selectedHouse.mapY)}
-          isAdmin={isAdmin}
-          onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
-        />
-      )}
+      {(() => {
+        const activeHouse = selectedHouse ? (housesData[selectedHouse.id] || selectedHouse) : null;
+        if (!activeHouse) return null;
+        return (
+          <HouseModal
+            house={activeHouse}
+            onClose={() => setSelectedHouse(null)}
+            onSave={handleSaveHouse}
+            isCandyCollected={collectedCandyIds.has(activeHouse.id)}
+            onToggleCollected={handleToggleCollectedCandy}
+            distanceMeters={getCoordsDistanceMeters(activeHouse.mapX, activeHouse.mapY)}
+            isAdmin={isAdmin}
+            onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+          />
+        );
+      })()}
 
       {/* Candy Bag / Trick or Treat Drawer */}
       <CandyBagDrawer

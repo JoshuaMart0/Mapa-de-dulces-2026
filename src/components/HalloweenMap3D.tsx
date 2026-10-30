@@ -125,6 +125,25 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     };
   }, []);
 
+  // Synchronize 3D visual state (candy glows, floating badges) whenever housesData changes
+  useEffect(() => {
+    if (!neighborhoodRef.current) return;
+    const nb = neighborhoodRef.current;
+    Object.values(housesData).forEach((house) => {
+      const houseGroup = nb.housesGroup.getObjectByName(house.id) as THREE.Group | undefined;
+      if (houseGroup) {
+        updateHouseVisualState(houseGroup, house.houseNumber, house.hasCandy);
+        const list = nb.candyHouses;
+        const idx = list.indexOf(houseGroup);
+        if (house.hasCandy && idx === -1) {
+          list.push(houseGroup);
+        } else if (!house.hasCandy && idx !== -1) {
+          list.splice(idx, 1);
+        }
+      }
+    });
+  }, [housesData]);
+
   // Update lighting when time of day changes
   useEffect(() => {
     if (!lightsRef.current || !sceneRef.current) return;
@@ -329,6 +348,21 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     scene.add(neighborhood.hayBalesGroup);
     scene.add(neighborhood.streetLampsGroup);
     neighborhoodRef.current = neighborhood;
+
+    // Immediately synchronize all houses with live housesData
+    Object.values(housesDataRef.current).forEach((house) => {
+      const houseGroup = neighborhood.housesGroup.getObjectByName(house.id) as THREE.Group | undefined;
+      if (houseGroup) {
+        updateHouseVisualState(houseGroup, house.houseNumber, house.hasCandy);
+        const list = neighborhood.candyHouses;
+        const idx = list.indexOf(houseGroup);
+        if (house.hasCandy && idx === -1) {
+          list.push(houseGroup);
+        } else if (!house.hasCandy && idx !== -1) {
+          list.splice(idx, 1);
+        }
+      }
+    });
 
     // ==========================================
     // 3. PARK & GLORIETA SPECIAL CANDY GLOW SPOTS
@@ -763,11 +797,11 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       controls.desiredRadius = Math.max(12, Math.min(85, controls.desiredRadius * zoomFactor));
     };
 
-    // Click / Tap detection for selecting house or walking
+    // Click / Tap detection for selecting house (tag label, roof, hit box or facade)
     const handleClick = (e: MouseEvent) => {
       const controls = cameraControlRef.current;
-      // If user dragged substantially, it was a pan, not a tap
-      if (controls.dragDistance > 10) return;
+      // If user dragged substantially, it was a pan, not a tap (tolerance adapted for mobile touchscreens)
+      if (controls.dragDistance > 20) return;
 
       const rect = dom.getBoundingClientRect();
       _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -775,27 +809,34 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
 
       _raycaster.setFromCamera(_pointer, camera);
 
-      // Check if clicked a house
+      // Check if clicked a house (hitBox, floating sprite tag, or building geometry)
       if (neighborhoodRef.current) {
         const houseIntersects = _raycaster.intersectObjects(
           neighborhoodRef.current.housesGroup.children,
           true
         );
         if (houseIntersects.length > 0) {
-          // Find root house group
-          let cur: THREE.Object3D | null = houseIntersects[0].object;
-          let targetHouseGroup: THREE.Group | null = null;
-          while (cur && cur !== neighborhoodRef.current.housesGroup) {
-            if (cur.userData && cur.userData.isHouse) {
-              targetHouseGroup = cur as THREE.Group;
+          let targetHouseId: string | null = null;
+
+          // Find houseId either from direct object (hitBox, sprite) or ascending the tree
+          for (const hit of houseIntersects) {
+            let cur: THREE.Object3D | null = hit.object;
+            if (cur.userData && cur.userData.houseId) {
+              targetHouseId = cur.userData.houseId;
               break;
             }
-            cur = cur.parent;
+            while (cur && cur !== neighborhoodRef.current.housesGroup) {
+              if (cur.userData && cur.userData.isHouse && cur.userData.houseId) {
+                targetHouseId = cur.userData.houseId;
+                break;
+              }
+              cur = cur.parent;
+            }
+            if (targetHouseId) break;
           }
 
-          if (targetHouseGroup && targetHouseGroup.userData.houseId) {
-            const hid = targetHouseGroup.userData.houseId;
-            const houseRecord = housesDataRef.current[hid];
+          if (targetHouseId) {
+            const houseRecord = housesDataRef.current[targetHouseId];
             if (houseRecord) {
               sounds.playSelect();
               onSelectHouse(houseRecord);

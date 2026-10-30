@@ -449,7 +449,7 @@ export function createAestheticHouse(
   );
   innerAura.name = 'candyAuraRing';
   innerAura.rotation.x = -Math.PI / 2;
-  innerAura.position.set(0, 0.04, 0);
+  innerAura.position.set(0, 0.052, 0);
   candyGlowGroup.add(innerAura);
 
   // 2. Secondary corona aura
@@ -466,7 +466,7 @@ export function createAestheticHouse(
   );
   outerAura.name = 'candyOuterAuraRing';
   outerAura.rotation.x = -Math.PI / 2;
-  outerAura.position.set(0, 0.038, 0);
+  outerAura.position.set(0, 0.051, 0);
   candyGlowGroup.add(outerAura);
 
   // 3. Vertical aura cylinder halo
@@ -482,16 +482,43 @@ export function createAestheticHouse(
     auraCylinderMat
   );
   auraCylinder.name = 'candyAuraCylinder';
-  auraCylinder.position.set(0, (h * 1.6) / 2, 0);
+  auraCylinder.position.set(0, (h * 1.6) / 2 + 0.05, 0);
   candyGlowGroup.add(auraCylinder);
+
+  // Attach candy glow group directly to the house group
+  group.add(candyGlowGroup);
 
   // (8) Floating 3D House Number Badge Label (visible when house gives candy)
   const badgeY = foundationH + bodyH + roofH + 1.35;
-  const badge = createHouseBadgeSprite(houseNumber || '?');
+  const badge = createHouseBadgeSprite(
+    houseNumber || '?',
+    options?.houseId,
+    options?.streetName
+  );
   badge.position.set(0, badgeY, 0);
   badge.visible = hasCandy;
   group.add(badge);
   group.userData.houseBadgeSprite = badge;
+
+  // (9) Generous invisible hit volume covering house AND the entire floating tag above it
+  const totalHitHeight = foundationH + bodyH + roofH + 2.8;
+  const hitMesh = new THREE.Mesh(
+    pool.getBox(w * 1.6, totalHitHeight, d * 1.6),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    })
+  );
+  hitMesh.position.set(0, totalHitHeight / 2, 0);
+  hitMesh.name = 'houseClickHitBox';
+  hitMesh.userData = {
+    isHouse: true,
+    houseId: options?.houseId || '',
+    houseNumber,
+    streetName: options?.streetName || '',
+  };
+  group.add(hitMesh);
 
   // Direct fast-access references stored on userData for O(1) animation
   group.userData.candyGlowGroup = candyGlowGroup;
@@ -517,7 +544,11 @@ export function createAestheticHouse(
  * Creates a crisp floating 3D badge showing the house number above the roof.
  * High-resolution canvas & enlarged sprite scale ensure high visibility from far distances.
  */
-export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
+export function createHouseBadgeSprite(
+  numberStr: string,
+  houseId?: string,
+  streetName?: string
+): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 180;
@@ -568,7 +599,11 @@ export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
     ctx.stroke();
 
     // Text: Large bold House Number with candy icon
-    const label = numberStr && numberStr !== '?' ? `#${numberStr} 🍬` : '🍬 DULCES';
+    const isSpecialNamed = numberStr.toLowerCase().includes('caseta') || numberStr.toLowerCase().includes('inicio');
+    const label = isSpecialNamed
+      ? `${numberStr} 🍬`
+      : (numberStr && numberStr !== '?' ? `#${numberStr} 🍬` : '🍬 DULCES');
+
     ctx.font = '900 70px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -597,6 +632,13 @@ export function createHouseBadgeSprite(numberStr: string): THREE.Sprite {
   sprite.name = 'houseBadgeSprite';
   // Generous scale to be easily legible across the whole 3D neighborhood
   sprite.scale.set(3.8, 1.35, 1);
+  sprite.userData = {
+    isHouse: true,
+    isBadge: true,
+    houseId: houseId || '',
+    houseNumber: numberStr,
+    streetName: streetName || '',
+  };
   return sprite;
 }
 
@@ -647,7 +689,11 @@ export function updateHouseVisualState(
     const bodyH = houseGroup.userData.h || 1.1;
     const roofH = bodyH * 0.46;
     const badgeY = 0.08 + bodyH + roofH + 1.35;
-    const newBadge = createHouseBadgeSprite(houseNumber || '?');
+    const newBadge = createHouseBadgeSprite(
+      houseNumber || '?',
+      houseGroup.userData.houseId,
+      houseGroup.userData.streetName
+    );
     newBadge.position.set(0, badgeY, 0);
     newBadge.visible = true;
     houseGroup.add(newBadge);
