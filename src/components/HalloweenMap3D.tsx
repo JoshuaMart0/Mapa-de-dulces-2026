@@ -557,6 +557,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
 
     // ==========================================
     // 4B. ADMIN 3D HOVER SELECTION INDICATOR
+    // Highlights the exact house borders, 3D volume, and ground lot grid
     // ==========================================
     const hoverIndicatorGroup = new THREE.Group();
     hoverIndicatorGroup.name = 'hoverIndicatorGroup';
@@ -564,50 +565,83 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     scene.add(hoverIndicatorGroup);
     hoverIndicatorGroupRef.current = hoverIndicatorGroup;
 
-    // A. Ground Reticle - Outer glowing bracket disc
-    const hoverGroundMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8, // vibrant cyan
-      side: THREE.DoubleSide,
+    // 1. Neon Wireframe Edges Box (highlights all 12 outer edges of the house)
+    const unitBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const hoverEdgesGeo = new THREE.EdgesGeometry(unitBoxGeo);
+    const hoverEdgesMat = new THREE.LineBasicMaterial({
+      color: 0x00f0ff, // electric cyan
       transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
+      opacity: 0.95,
+      depthTest: true,
     });
-    const hoverGroundRing = new THREE.Mesh(new THREE.RingGeometry(0.72, 0.98, 32), hoverGroundMat);
-    hoverGroundRing.rotation.x = -Math.PI / 2;
-    hoverGroundRing.position.y = 0.06;
-    hoverGroundRing.name = 'hoverGroundRing';
-    hoverIndicatorGroup.add(hoverGroundRing);
+    const hoverEdgesBox = new THREE.LineSegments(hoverEdgesGeo, hoverEdgesMat);
+    hoverEdgesBox.name = 'hoverEdgesBox';
+    hoverIndicatorGroup.add(hoverEdgesBox);
 
-    // B. Ground Inner Disc
-    const hoverDiscMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      side: THREE.DoubleSide,
+    // 2. Glowing Holographic Volume Box (makes the model body visibly glow & stand out)
+    const hoverVolumeMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
       transparent: true,
       opacity: 0.28,
+      side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const hoverGroundDisc = new THREE.Mesh(new THREE.CircleGeometry(0.68, 32), hoverDiscMat);
-    hoverGroundDisc.rotation.x = -Math.PI / 2;
-    hoverGroundDisc.position.y = 0.058;
-    hoverIndicatorGroup.add(hoverGroundDisc);
+    const hoverVolumeBox = new THREE.Mesh(unitBoxGeo, hoverVolumeMat);
+    hoverVolumeBox.name = 'hoverVolumeBox';
+    hoverIndicatorGroup.add(hoverVolumeBox);
 
-    // C. Ground Architectural Bounding Corner Brackets
-    const hoverCornerGeo = new THREE.BoxGeometry(1.25, 0.03, 1.25);
-    const hoverCornerEdges = new THREE.EdgesGeometry(hoverCornerGeo);
-    const hoverCornerLines = new THREE.LineSegments(
-      hoverCornerEdges,
-      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9 })
+    // 3. Ground Architectural Parcel Lot Grid
+    const hoverGroundGrid = new THREE.Group();
+    hoverGroundGrid.name = 'hoverGroundGrid';
+    hoverGroundGrid.position.y = 0.055;
+
+    // A. Outer Lot Boundary Perimeter
+    const lotPlaneGeo = new THREE.PlaneGeometry(1, 1);
+    const lotEdgesGeo = new THREE.EdgesGeometry(lotPlaneGeo);
+    const lotBorder = new THREE.LineSegments(
+      lotEdgesGeo,
+      new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.9 })
     );
-    hoverCornerLines.position.y = 0.062;
-    hoverIndicatorGroup.add(hoverCornerLines);
+    lotBorder.rotation.x = -Math.PI / 2;
+    hoverGroundGrid.add(lotBorder);
 
-    // D. Floating 3D Cursor Pin / Downward Arrow above the house
+    // B. Inner Semi-transparent Lot Footprint Pad
+    const lotPad = new THREE.Mesh(
+      lotPlaneGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0x0284c7,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      })
+    );
+    lotPad.rotation.x = -Math.PI / 2;
+    hoverGroundGrid.add(lotPad);
+
+    // C. Lot Grid Crosshair Lines (Dividing into quadrants)
+    const crossPoints = [
+      new THREE.Vector3(-0.5, 0.002, 0),
+      new THREE.Vector3(0.5, 0.002, 0),
+      new THREE.Vector3(0, 0.002, -0.5),
+      new THREE.Vector3(0, 0.002, 0.5),
+    ];
+    const crossGeo = new THREE.BufferGeometry().setFromPoints(crossPoints);
+    const crossLines = new THREE.LineSegments(
+      crossGeo,
+      new THREE.LineBasicMaterial({ color: 0xfef08a, transparent: true, opacity: 0.85 })
+    );
+    hoverGroundGrid.add(crossLines);
+
+    hoverIndicatorGroup.add(hoverGroundGrid);
+
+    // 4. Floating 3D Cursor Pin / Downward Arrow above the house
     const hoverCursorPinGroup = new THREE.Group();
     hoverCursorPinGroup.name = 'hoverCursorPinGroup';
     hoverCursorPinGroup.position.y = 2.2;
 
     const cursorPinMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
+      color: 0x00f0ff,
       emissive: 0x0284c7,
       emissiveIntensity: 0.9,
       roughness: 0.2,
@@ -778,10 +812,9 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
           pin.rotation.y = elapsed * 3;
           pin.position.y = (hoveredBaseHeightRef.current || 2.2) + Math.sin(elapsed * 7) * 0.12;
         }
-        const ring = hGroup.getObjectByName('hoverGroundRing') as THREE.Mesh | undefined;
-        if (ring) {
-          const s = 1.0 + Math.sin(elapsed * 5) * 0.08;
-          ring.scale.set(s, s, s);
+        const vol = hGroup.getObjectByName('hoverVolumeBox') as THREE.Mesh | undefined;
+        if (vol && vol.material instanceof THREE.MeshBasicMaterial) {
+          vol.material.opacity = 0.22 + Math.sin(elapsed * 5) * 0.08;
         }
       }
 
@@ -864,16 +897,16 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
             }
           }
 
-          // Priority 2: Check physical house geometry (roof, walls, doors)
+          // Priority 2: Check precision house parcel hitboxes and geometry (roof, walls, doors)
           if (!targetHouseId) {
             const houseIntersects = _raycaster.intersectObjects(housesGroup.children, true);
             for (const hit of houseIntersects) {
               const obj = hit.object;
+              // Strictly skip auras and the hover indicator itself
               if (
                 obj.userData?.isAura ||
                 obj.name?.includes('Aura') ||
                 obj.name?.includes('Cylinder') ||
-                obj.name?.includes('HitBox') ||
                 obj.name?.includes('hover')
               ) {
                 continue;
@@ -899,10 +932,36 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
             if (hoverIndicatorGroupRef.current) {
               const hGroup = targetHouseGroup || (housesGroup.getObjectByName(targetHouseId) as THREE.Group | null);
               if (hGroup) {
+                const w = hGroup.userData?.w || 1.05;
+                const d = hGroup.userData?.d || 1.05;
+                const totalH = hGroup.userData?.totalH || 1.6;
+
                 hoverIndicatorGroupRef.current.position.set(hGroup.position.x, 0, hGroup.position.z);
-                const bH = hGroup.userData?.h || 1.1;
-                const rH = bH * 0.46;
-                hoveredBaseHeightRef.current = 0.08 + bH + rH + 0.65;
+                hoverIndicatorGroupRef.current.rotation.y = hGroup.rotation.y;
+
+                const edgesBox = hoverIndicatorGroupRef.current.getObjectByName('hoverEdgesBox');
+                if (edgesBox) {
+                  edgesBox.scale.set(w * 1.03, totalH * 1.03, d * 1.03);
+                  edgesBox.position.set(0, totalH / 2, 0);
+                }
+
+                const volumeBox = hoverIndicatorGroupRef.current.getObjectByName('hoverVolumeBox');
+                if (volumeBox) {
+                  volumeBox.scale.set(w * 1.02, totalH * 1.02, d * 1.02);
+                  volumeBox.position.set(0, totalH / 2, 0);
+                }
+
+                const groundGrid = hoverIndicatorGroupRef.current.getObjectByName('hoverGroundGrid');
+                if (groundGrid) {
+                  groundGrid.scale.set(w * 1.15, 1, d * 1.15);
+                }
+
+                const pin = hoverIndicatorGroupRef.current.getObjectByName('hoverCursorPinGroup');
+                if (pin) {
+                  hoveredBaseHeightRef.current = totalH + 0.65;
+                  pin.position.y = hoveredBaseHeightRef.current;
+                }
+
                 hoverIndicatorGroupRef.current.visible = true;
               }
             }
@@ -1095,12 +1154,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
       for (const hit of houseIntersects) {
         const obj = hit.object;
 
-        // Strictly ignore auras, halos, and hitboxes
+        // Strictly ignore auras, halos, and the hover indicator itself
         if (
           obj.userData?.isAura ||
           obj.name?.includes('Aura') ||
           obj.name?.includes('Cylinder') ||
-          obj.name?.includes('HitBox')
+          obj.name?.includes('hover')
         ) {
           continue;
         }

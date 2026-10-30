@@ -488,6 +488,36 @@ export function createAestheticHouse(
   group.add(badge);
   group.userData.houseBadgeSprite = badge;
 
+  // (9) Precision House Parcel Hit Volume
+  // Exactly bounded to house footprint (w x totalH x d) so each house has a distinct, continuous selectable area
+  const totalH = foundationH + bodyH + roofH;
+  group.userData.totalH = totalH;
+  group.userData.roofH = roofH;
+  group.userData.w = w;
+  group.userData.d = d;
+
+  const hitBoxGeo = pool.getBox(w, totalH, d);
+  const hitBoxMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
+  hitBox.name = 'houseParcelHitBox';
+  hitBox.position.set(0, totalH / 2, 0);
+  hitBox.userData = {
+    isHouse: true,
+    isHitBox: true,
+    houseId: options?.houseId || '',
+    houseNumber,
+    streetName: options?.streetName || '',
+    w,
+    d,
+    totalH,
+  };
+  group.add(hitBox);
+  group.userData.hitBox = hitBox;
+
   // Direct fast-access references stored on userData for O(1) animation
   group.userData.candyGlowGroup = candyGlowGroup;
   group.userData.candyAuraRing = innerAura;
