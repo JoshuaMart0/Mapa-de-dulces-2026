@@ -655,10 +655,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
     // Glowing bright top bead
     const cursorBeadMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
     const cursorBead = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), cursorBeadMat);
-    cursorBead.position.y = 0.28;
-    hoverCursorPinGroup.add(cursorBead);
-
     hoverIndicatorGroup.add(hoverCursorPinGroup);
+
+    // Disable raycasting completely on hoverIndicatorGroup so it never intercepts clicks or hovers
+    hoverIndicatorGroup.traverse((c) => {
+      c.raycast = () => {};
+    });
 
     // ==========================================
     // 5. ANIMATION LOOP
@@ -913,15 +915,14 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
               }
 
               let cur: THREE.Object3D | null = obj;
-              while (cur && cur !== housesGroup) {
-                if (cur.userData?.isHouse && cur.userData?.houseId) {
-                  targetHouseId = cur.userData.houseId;
-                  targetHouseGroup = cur as THREE.Group;
-                  break;
-                }
+              while (cur && cur.parent && cur.parent !== housesGroup) {
                 cur = cur.parent;
               }
-              if (targetHouseId) break;
+              if (cur && cur.parent === housesGroup) {
+                targetHouseGroup = cur as THREE.Group;
+                targetHouseId = targetHouseGroup.userData?.houseId || targetHouseGroup.name;
+                break;
+              }
             }
           }
 
@@ -930,13 +931,17 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
             hoveredHouseIdRef.current = targetHouseId;
 
             if (hoverIndicatorGroupRef.current) {
-              const hGroup = targetHouseGroup || (housesGroup.getObjectByName(targetHouseId) as THREE.Group | null);
+              const hGroup = targetHouseGroup || (targetHouseId ? (housesGroup.getObjectByName(targetHouseId) as THREE.Group | null) : null);
               if (hGroup) {
                 const w = hGroup.userData?.w || 1.05;
                 const d = hGroup.userData?.d || 1.05;
                 const totalH = hGroup.userData?.totalH || 1.6;
 
-                hoverIndicatorGroupRef.current.position.set(hGroup.position.x, 0, hGroup.position.z);
+                // Extract exact world position of the house
+                const worldPos = new THREE.Vector3();
+                hGroup.getWorldPosition(worldPos);
+
+                hoverIndicatorGroupRef.current.position.set(worldPos.x, worldPos.y, worldPos.z);
                 hoverIndicatorGroupRef.current.rotation.y = hGroup.rotation.y;
 
                 const edgesBox = hoverIndicatorGroupRef.current.getObjectByName('hoverEdgesBox');
@@ -954,6 +959,7 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
                 const groundGrid = hoverIndicatorGroupRef.current.getObjectByName('hoverGroundGrid');
                 if (groundGrid) {
                   groundGrid.scale.set(w * 1.15, 1, d * 1.15);
+                  groundGrid.position.set(0, 0.005, 0);
                 }
 
                 const pin = hoverIndicatorGroupRef.current.getObjectByName('hoverCursorPinGroup');
@@ -1165,14 +1171,12 @@ export const HalloweenMap3D = React.forwardRef<HalloweenMapHandle, HalloweenMap3
         }
 
         let cur: THREE.Object3D | null = obj;
-        let targetHouseId: string | null = cur.userData?.houseId || null;
-
-        while (cur && cur !== housesGroup && !targetHouseId) {
-          if (cur.userData?.isHouse && cur.userData?.houseId) {
-            targetHouseId = cur.userData.houseId;
-            break;
-          }
+        while (cur && cur.parent && cur.parent !== housesGroup) {
           cur = cur.parent;
+        }
+        let targetHouseId: string | null = null;
+        if (cur && cur.parent === housesGroup) {
+          targetHouseId = cur.userData?.houseId || cur.name;
         }
 
         if (targetHouseId && housesDataRef.current[targetHouseId]) {
